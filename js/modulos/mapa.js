@@ -3,7 +3,8 @@
  * ---------------------------------------------------------------
  * Todo lo relacionado con Leaflet: creación del mapa, marcadores
  * coloreados por estado y orientados según el rumbo, popups,
- * animación suave entre posiciones y leyenda.
+ * animación suave entre posiciones, leyenda y seguimiento de un tren
+ * (el mapa lo mantiene centrado mientras se mueve).
  *
  * Depende de la variable global `L` (Leaflet cargado en index.html).
  */
@@ -20,6 +21,10 @@ const DISTANCIA_MIN_RUMBO_KM = 0.05;
 const CAMBIO_MIN_RUMBO = 12;
 /** A partir de cuántos minutos una posición se marca como posiblemente desfasada */
 const MINUTOS_DATO_ANTIGUO = 10;
+/** Zoom al empezar a seguir un tren */
+const ZOOM_SEGUIMIENTO = 13;
+/** Desvío (px) del tren respecto al centro a partir del cual se recentra */
+const DESVIO_MAX_PX = 1;
 
 /** Escapa texto antes de meterlo en HTML (los feeds no son de fiar) */
 export function escaparHtml(texto) {
@@ -93,6 +98,10 @@ function htmlPopup(v, color) {
         ${antiguedad ? `<li class="${datoViejo ? 'dato-viejo' : ''}"><span class="etq">Posición</span>${escaparHtml(antiguedad)}${datoViejo ? ' · puede no estar al día' : ''}</li>` : ''}
       </ul>
       ${v.sintetico ? '<p class="ficha-aviso">Tren ficticio del modo simulado.</p>' : ''}
+      <div class="ficha-acciones">
+        <button type="button" data-accion="seguir" data-id="${escaparHtml(v.id)}" class="boton-ficha boton-ficha-principal">Seguir este tren</button>
+        <button type="button" data-accion="compartir" data-id="${escaparHtml(v.id)}" class="boton-ficha">Compartir</button>
+      </div>
       <details class="ficha-tecnico">
         <summary>Datos técnicos</summary>
         <dl>
@@ -127,6 +136,12 @@ export class MapaTransporte {
     this.idBucle = null;
     /** Duración del primer deslizamiento de cada tren (se ajusta por modo) */
     this.duracionInicialSeg = CONFIG.animacion.duracionInicialSeg;
+    /** Seguimiento: id del tren seguido y si el mapa debe mantenerlo centrado */
+    this.idSeguido = null;
+    this.centrarSeguido = false;
+    this.volando = false;
+    /** Aviso a app.js cuando el usuario arrastra el mapa y deja de centrarse */
+    this.alSoltarSeguimiento = null;
 
     const c = CONFIG.mapa;
     this.mapa = L.map(idContenedor, {
@@ -153,6 +168,14 @@ export class MapaTransporte {
       this.enZoom = false;
       this._pintarFotograma(performance.now(), true);
     });
+    // Si el usuario arrastra el mapa mientras sigue un tren, se respeta su
+    // gesto: se deja de centrar (el tren sigue destacado) hasta que pulse «Centrar».
+    this.mapa.on('dragstart', () => {
+      if (this.idSeguido && this.centrarSeguido) {
+        this.centrarSeguido = false;
+        this.alSoltarSeguimiento?.();
+      }
+    });
   }
 
   colorDe(estado) {
@@ -173,7 +196,7 @@ export class MapaTransporte {
 
   _icono(vehiculo, rumbo) {
     return L.divIcon({
-      className: 'marcador-tren',
+      className: vehiculo.id === this.idSeguido ? 'marcador-tren marcador-seguido' : 'marcador-tren',
       html: htmlIcono(vehiculo, this.colorDe(vehiculo.estado), rumbo),
       iconSize: [28, 28],
       iconAnchor: [14, 14],
@@ -286,6 +309,66 @@ export class MapaTransporte {
         this.enMovimiento.delete(id);
       }
     }
+    this._centrarEnSeguido();
+  }
+
+  /* ---------- Seguir un tren ---------- */
+
+  /** Posición pintada ahora mismo del tren seguido */
+  _posicionSeguido() {
+    const registro = this.idSeguido && this.marcadores.get(this.idSeguido);
+    return registro ? registro.marcador.getLatLng() : null;
+  }
+
+  /** Mueve el mapa (sin animación, en cada fotograma) para que el tren siga en el centro */
+  _centrarEnSeguido() {
+    if (!this.idSeguido || !this.centrarSeguido || this.enZoom || this.volando) return;
+    const pos = this._posicionSeguido();
+    if (!pos) return;
+    const desvio = this.mapa.latLngToContainerPoint(pos).subtract(this.mapa.getSize().divideBy(2));
+    if (Math.abs(desvio.x) > DESVIO_MAX_PX || Math.abs(desvio.y) > DESVIO_MAX_PX) {
+      this.mapa.panBy(desvio, { animate: false });
+    }
+  }
+
+  /**
+   * Empieza a seguir un tren (o deja de hacerlo con id = null).
+   * @param {string|null} id
+   * @param {{acercar?: boolean}} opciones acercar: vuela hasta el tren y hace zoom
+   */
+  seguir(id, { acercar = false } = {}) {
+    const anterior = this.idSeguido;
+    this.idSeguido = id;
+    this.centrarSeguido = Boolean(id);
+    // Redibuja el icono del anterior y del nuevo para quitar o poner el resalte
+    for (const idCambio of new Set([anterior, id])) {
+      const registro = idCambio && this.marcadores.get(idCambio);
+      if (!registro) continue;
+      registro.marcador.setZIndexOffset(idCambio === id ? 1000 : 0);
+      this._actualizarIcono(registro, true);
+    }
+    if (id && acercar) this.centrarEnSeguido({ volar: true });
+  }
+
+  /** Vuelve a centrar el mapa en el tren seguido (botón «Centrar») */
+  centrarEnSeguido({ volar = true } = {}) {
+    const registro = this.idSeguido && this.marcadores.get(this.idSeguido);
+    if (!registro) return;
+    registro.marcador.closePopup();
+    this.centrarSeguido = true;
+    const destino = registro.tramo ? posicionEnTramo(registro.tramo, performance.now()) : registro.marcador.getLatLng();
+    const zoom = Math.max(this.mapa.getZoom(), ZOOM_SEGUIMIENTO);
+    if (!volar) {
+      this.mapa.setView([destino.lat, destino.lon ?? destino.lng], zoom, { animate: false });
+      return;
+    }
+    // Durante el vuelo no se recentra fotograma a fotograma; al aterrizar, sí
+    this.volando = true;
+    this.mapa.flyTo([destino.lat, destino.lon ?? destino.lng], zoom, { duration: 0.9 });
+    this.mapa.once('moveend', () => {
+      this.volando = false;
+      this._centrarEnSeguido();
+    });
   }
 
   /**
@@ -305,6 +388,7 @@ export class MapaTransporte {
           title: v.titulo || v.etiqueta,
           keyboard: true,
           riseOnHover: true,
+          zIndexOffset: v.id === this.idSeguido ? 1000 : 0,
         }).bindPopup(htmlPopup(v, color), { maxWidth: 300, minWidth: 240 });
         marcador.addTo(this.mapa);
         this.marcadores.set(v.id, {
@@ -321,6 +405,9 @@ export class MapaTransporte {
       if (anterior.lat !== v.lat || anterior.lon !== v.lon) this._moverA(registro, v.lat, v.lon);
       this._actualizarIcono(registro, anterior.estado !== v.estado);
     }
+
+    // Un tren seguido parado no entra en el bucle de animación: se centra aquí
+    this._centrarEnSeguido();
 
     for (const [id, registro] of this.marcadores) {
       if (!vistos.has(id)) {

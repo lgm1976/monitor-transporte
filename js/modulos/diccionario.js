@@ -100,8 +100,14 @@ export function enriquecerVehiculo(v, dicc) {
   const etiqueta = parsearEtiqueta(v.etiqueta);
   const viaje = dicc.viaje(v.tripId);
   const linea = viaje?.linea ?? (etiqueta.linea ? { nombre: etiqueta.linea, color: null, colorTexto: null } : null);
-  const servicio = dicc.servicioPorDefecto === 'Cercanías' ? 'Cercanías' : viaje?.grupo || dicc.servicioPorDefecto || null;
-  const nucleo = dicc.servicioPorDefecto === 'Cercanías' ? viaje?.grupo ?? null : null;
+  // En el feed de Cercanías el grupo de la línea es el núcleo ("Madrid");
+  // en un diccionario mixto (el simulado) se escribe "Cercanías Madrid".
+  let servicio = dicc.servicioPorDefecto === 'Cercanías' ? 'Cercanías' : viaje?.grupo || dicc.servicioPorDefecto || null;
+  let nucleo = dicc.servicioPorDefecto === 'Cercanías' ? viaje?.grupo ?? null : null;
+  if (!nucleo && servicio?.startsWith('Cercanías ')) {
+    nucleo = servicio.slice('Cercanías '.length);
+    servicio = 'Cercanías';
+  }
   const paradaNombre = dicc.estacion(v.paradaId);
   const numeroTren = etiqueta.numero ?? v.vehiculoId ?? null;
 

@@ -5,6 +5,7 @@ Aplicación web estática que muestra en un mapa interactivo la posición y la p
 - HTML + JavaScript vanilla (módulos ES), **Tailwind CSS** y **Leaflet**
 - **Modo simulado** con trenes que se mueven, para validar la interfaz sin depender de ninguna API
 - **Modo real** con varias fuentes en paralelo, retrasos cruzados desde TripUpdates y soporte protobuf bajo demanda
+- **Filtros por servicio y núcleo**, **seguir un tren** y **enlace para compartirlo**
 - Colores y umbrales de retraso definidos en `data/estilo_mapa.json`
 
 ## Estructura
@@ -18,9 +19,10 @@ js/
   modulos/
     estado.js              Clasificación de puntualidad y frases (puro, testeable)
     diccionario.js         Códigos → línea, estación, horario (puro, testeable)
+    filtros.js             Servicio/núcleo, clave del tren, URL y resumen (puro, testeable)
     normalizador.js        GTFS-RT → modelo interno (puro, testeable)
     mapa.js                Leaflet: marcadores, movimiento continuo, fichas, leyenda
-    panel.js               Contadores-filtro, buscador y listado
+    panel.js               Selectores de servicio y núcleo, contadores-filtro, buscador y listado
   fuentes/
     fuenteMock.js          Datos simulados con movimiento
     fuenteGtfsRt.js        Feeds reales (varias fuentes en paralelo)
@@ -141,6 +143,31 @@ Para generarlos en local: `python3 scripts/generar_diccionarios.py`.
 
 **Desfase horario del feed de larga distancia.** Desde el cambio al horario de invierno, Renfe publica las marcas de tiempo de las posiciones y las horas previstas de AV/LD/MD con una hora de retraso. La app lo detecta sola (si la mediana va entre 45 y 120 minutos por detrás del reloj, suma una hora) y deja de corregir en cuanto Renfe lo arregle.
 
+## Filtros, seguir un tren y compartirlo
+
+**Filtros por servicio y núcleo.** Dos selectores encima de los contadores: *Servicio* (Cercanías, AVE, Alvia, Media Distancia…) y *Núcleo* de Cercanías (Madrid, Rodalies de Catalunya, Bilbao…). Las opciones salen de los datos del momento, con el número de trenes de cada una. Elegir un núcleo implica Cercanías. Al cambiar, el mapa encuadra esos trenes y los contadores, el listado y el resumen («Cercanías Madrid · 72 trenes · 57 % puntuales») se limitan a ese ámbito. El porcentaje solo cuenta los trenes con dato de retraso; los cancelados cuentan como no puntuales.
+
+**Seguir un tren.** En la ficha de cualquier tren, «Seguir este tren». El mapa vuela hasta él y lo mantiene centrado mientras se mueve; abajo aparece una tarjeta con trayecto, puntualidad, dónde está, hora de llegada y antigüedad de la posición, que se actualiza en cada lectura. El tren seguido:
+
+- se ve siempre, aunque los filtros lo dejen fuera, y va el primero del listado;
+- se destaca con un anillo que late (sin animación si el sistema pide reducir movimiento);
+- si arrastras el mapa, deja de centrarse y aparece «Centrar en el tren»; lo mismo con «Ver todos» o al pulsar otro tren del listado;
+- si desaparece del feed (aún no ha salido o ya llegó), la tarjeta dice que se sigue buscando y lo recupera en cuanto vuelve;
+- se deja de seguir con la ✕ de la tarjeta o con la tecla Escape.
+
+**Enlace para compartir.** «Compartir» (en la ficha o en la tarjeta) genera `…/?modo=real&tren=75863`. En el móvil abre el menú de compartir del sistema (WhatsApp, Telegram…); en el ordenador copia el enlace al portapapeles. Quien lo abre va directo al tren, sin filtros. El tren se identifica por su **número** (el del billete), no por el id técnico del feed, y se acepta con o sin ceros a la izquierda (`190` = `00190`).
+
+La URL refleja siempre el estado, así que también se pueden guardar vistas en favoritos:
+
+| Parámetro | Ejemplo | Efecto |
+|---|---|---|
+| `modo` | `real` / `mock` | Datos reales o simulados |
+| `tren` | `15868` | Sigue ese tren al abrir |
+| `servicio` | `AVE` | Filtra por tipo de servicio |
+| `nucleo` | `Madrid` | Filtra por núcleo de Cercanías |
+
+En el modo simulado los trenes C4 y R1 tienen núcleo (Madrid y Rodalies de Catalunya) para poder probar el filtro: en `data/diccionarios/mock.json` el grupo de la línea se escribe «Cercanías Madrid».
+
 ## CORS: cuándo y cómo usar el proxy
 
 El navegador solo deja leer un feed de otro dominio si su servidor envía la cabecera `Access-Control-Allow-Origin`. Muchos feeds públicos no lo hacen. Opciones, de más a menos recomendable:
@@ -178,8 +205,9 @@ Usa las teselas estándar de OpenStreetMap, que no piden clave pero están pensa
 ## Próximos pasos sugeridos
 
 - Agrupar marcadores (Leaflet.markercluster) al ver toda España con los dos feeds de Renfe.
-- Filtros por tipo de servicio y por núcleo de Cercanías; arrancar centrado en la zona del usuario.
-- Panel de estación con próximas llegadas, favoritos y enlace para compartir un tren (`?tren=15868`).
+- Arrancar centrado en la zona del usuario (con permiso de ubicación).
+- Panel de estación con próximas llegadas y favoritos («mi C-4 de cada mañana»).
 - Trazado de las líneas (shapes.txt de Cercanías).
 - Capa de avisos de servicio (`Alert` de GTFS-RT).
-- Filtro por operador o tipo de servicio cuando haya varias fuentes.
+- Filtro por operador cuando haya fuentes de otros operadores.
+- Ficha deslizable desde abajo en el móvil también para el listado.

@@ -11,8 +11,8 @@
     ["Alvia", "", "", "Alvia"],
     ["Media Distancia", "", "", "Media Distancia"],
     ["Avlo", "", "", "Avlo"],
-    ["C4", "2C2A86", "FFFFFF", "Cercanías"],
-    ["R1", "7DBCEC", "FFFFFF", "Cercanías"]
+    ["C4", "2C2A86", "FFFFFF", "Cercanías Madrid"],
+    ["R1", "7DBCEC", "FFFFFF", "Cercanías Rodalies de Catalunya"]
   ],
   "estaciones": {
     "60000": "Madrid-Puerta de Atocha-Almudena Grandes",
