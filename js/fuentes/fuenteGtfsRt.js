@@ -3,13 +3,15 @@
  * ---------------------------------------------------------------
  * Fuente de datos reales. Lee todas las fuentes activas de
  * CONFIG.fuentesReales en paralelo, cruza posiciones con
- * actualizaciones de viaje (retrasos) y devuelve vehículos
- * normalizados. Si una fuente falla, las demás siguen funcionando.
+ * actualizaciones de viaje (retrasos), traduce los códigos con el
+ * diccionario de cada fuente y devuelve vehículos normalizados.
+ * Si una fuente falla, las demás siguen funcionando.
  */
 
 import { CONFIG } from '../config.js';
-import { pedirFeedGtfsRt } from '../utilidades/red.js';
-import { normalizarFeed, indexarActualizacionesViaje } from '../modulos/normalizador.js';
+import { pedirFeedGtfsRt, pedirJson } from '../utilidades/red.js';
+import { normalizarFeed, indexarActualizacionesViaje, detectarDesfaseHorario, tiemposDelFeed } from '../modulos/normalizador.js';
+import { Diccionario, enriquecerVehiculo } from '../modulos/diccionario.js';
 
 export class FuenteGtfsRt {
   constructor({ umbrales }) {
@@ -17,12 +19,30 @@ export class FuenteGtfsRt {
     this.umbrales = umbrales;
     /** Errores de la última lectura, por id de fuente */
     this.errores = new Map();
+    /** Diccionarios cargados, por id de fuente */
+    this.diccionarios = new Map();
   }
 
   async iniciar() {
-    if (!CONFIG.fuentesReales.some((f) => f.activa)) {
+    const activas = CONFIG.fuentesReales.filter((f) => f.activa);
+    if (activas.length === 0) {
       throw new Error('No hay fuentes reales activas en config.js (fuentesReales).');
     }
+    // Los diccionarios se cargan una vez. Si alguno falla, esa fuente
+    // seguirá funcionando pero mostrará códigos en lugar de nombres.
+    await Promise.all(
+      activas.map(async (f) => {
+        let datos;
+        if (f.diccionario) {
+          try {
+            datos = await pedirJson(f.diccionario);
+          } catch (error) {
+            console.warn(`[${f.id}] Diccionario no disponible:`, error.message);
+          }
+        }
+        this.diccionarios.set(f.id, new Diccionario(datos, { servicioPorDefecto: f.servicio || '' }));
+      })
+    );
   }
 
   /** Lee una fuente concreta: posiciones + (opcional) TripUpdates */
@@ -38,12 +58,20 @@ export class FuenteGtfsRt {
           })
         : null,
     ]);
+    const diccionario = this.diccionarios.get(fuente.id) ?? new Diccionario();
+    // Corrige feeds que publican las horas con una hora de retraso
+    const desfasePosiciones = detectarDesfaseHorario(tiemposDelFeed(posiciones));
+    const desfaseViajes = viajes ? detectarDesfaseHorario(tiemposDelFeed(viajes, { soloPrevisiones: true })) : 0;
+    if (desfasePosiciones || desfaseViajes) {
+      console.info(`[${fuente.id}] Corrigiendo desfase horario: posiciones +${desfasePosiciones} s, previsiones +${desfaseViajes} s`);
+    }
     return normalizarFeed(posiciones, {
-      indiceViajes: indexarActualizacionesViaje([viajes, posiciones]),
+      indiceViajes: indexarActualizacionesViaje([viajes, posiciones], { desfaseSeg: desfaseViajes }),
+      desfaseSeg: desfasePosiciones,
       unidadVelocidad: fuente.unidadVelocidad,
       umbrales: this.umbrales,
       fuente: fuente.nombre,
-    });
+    }).map((v) => enriquecerVehiculo(v, diccionario));
   }
 
   async leer() {

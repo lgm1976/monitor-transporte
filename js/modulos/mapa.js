@@ -9,10 +9,12 @@
  */
 
 import { CONFIG } from '../config.js';
-import { ETIQUETAS_ESTADO, ORDEN_ESTADOS, formatearRetraso } from './estado.js';
+import { ETIQUETAS_ESTADO, ORDEN_ESTADOS, describirAntiguedad } from './estado.js';
 
 /** Duración de la interpolación entre dos posiciones (ms) */
 const DURACION_ANIMACION_MS = 900;
+/** A partir de cuántos minutos una posición se marca como posiblemente desfasada */
+const MINUTOS_DATO_ANTIGUO = 10;
 
 /** Escapa texto antes de meterlo en HTML (los feeds no son de fiar) */
 export function escaparHtml(texto) {
@@ -36,32 +38,70 @@ function htmlIcono(vehiculo, color) {
     </svg>`;
 }
 
-/** Contenido del popup de un vehículo */
+/**
+ * Pastilla de línea o de servicio: "C3" con el color oficial de la línea
+ * en Cercanías, o "Alvia" / "AVE" en neutro para larga distancia.
+ */
+export function htmlPildora(v) {
+  const texto = v.linea?.color ? v.linea.nombre : v.servicio || v.linea?.nombre;
+  if (!texto) return '';
+  const fondo = v.linea?.color || '#334155';
+  const color = v.linea?.colorTexto || '#ffffff';
+  return `<span class="pildora" style="background:${fondo};color:${color}">${escaparHtml(texto)}</span>`;
+}
+
+/** Subtítulo de la ficha: "Cercanías Sevilla" o "Tren 00190" */
+function textoServicio(v) {
+  if (v.servicio === 'Cercanías') return v.nucleo ? `Cercanías ${v.nucleo}` : 'Cercanías';
+  return v.numeroTren ? `Tren ${v.numeroTren}` : v.servicio || '';
+}
+
+/** Ficha legible del tren (contenido del popup) */
 function htmlPopup(v, color) {
   const fila = (k, val) => (val === null || val === undefined || val === '' ? '' : `<dt>${k}</dt><dd>${escaparHtml(val)}</dd>`);
-  const hora = v.timestampMs ? new Date(v.timestampMs).toLocaleTimeString('es-ES') : null;
-  const velocidad = v.velocidadKmh !== null ? `${Math.round(v.velocidadKmh)} km/h` : null;
+  const antiguedad = describirAntiguedad(v.timestampMs);
+  const datoViejo = v.timestampMs && Date.now() - v.timestampMs > MINUTOS_DATO_ANTIGUO * 60000;
+
+  // Línea de situación: dónde está ahora
+  const situacion = [v.situacion, v.anden ? `andén ${v.anden}` : null, v.llegadaParada ? `prevista ${v.llegadaParada}` : null]
+    .filter(Boolean)
+    .join(' · ');
+
+  // Línea de horario: salida y llegada programadas (y prevista si hay retraso)
+  let horario = '';
+  if (v.salidaProg || v.llegadaProg) {
+    const llegada = v.llegadaPrevista && v.llegadaPrevista !== v.llegadaProg
+      ? `<s>${escaparHtml(v.llegadaProg)}</s> <strong>${escaparHtml(v.llegadaPrevista)}</strong>`
+      : escaparHtml(v.llegadaProg ?? '—');
+    horario = `<li><span class="etq">Horario</span>Sale ${escaparHtml(v.salidaProg ?? '—')} · Llega ${llegada}</li>`;
+  }
+
+  const servicio = textoServicio(v);
   return `
-    <div class="popup-tren">
-      <p class="popup-titulo">${escaparHtml(v.etiqueta)}</p>
-      <p class="popup-estado" style="--c:${color}">
-        <span class="punto"></span>${ETIQUETAS_ESTADO[v.estado]}${
-          v.estado === 'cancelled' || v.estado === 'unknown' ? '' : ` · ${escaparHtml(formatearRetraso(v.retrasoSeg))}`
-        }
-      </p>
-      <dl>
-        ${fila('Viaje', v.tripId)}
-        ${fila('Ruta', v.rutaId)}
-        ${fila('Salida prog.', v.horaInicio)}
-        ${fila('Vehículo', v.vehiculoId)}
-        ${fila('Velocidad', velocidad)}
-        ${fila('Rumbo', v.rumbo !== null ? `${Math.round(v.rumbo)}°` : null)}
-        ${fila('Situación', v.estadoParada)}
-        ${fila('Parada nº', v.secuenciaParada)}
-        ${fila('Último dato', hora)}
-        ${fila('Fuente', v.fuente)}
-      </dl>
-      ${v.sintetico ? '<p class="popup-aviso">Tren ficticio generado por el modo simulado.</p>' : ''}
+    <div class="ficha">
+      <div class="ficha-cabecera">${htmlPildora(v)}<span>${escaparHtml(servicio)}</span></div>
+      <p class="ficha-titulo">${escaparHtml(v.titulo)}</p>
+      <p class="ficha-estado" style="--c:${color}"><span class="punto"></span>${escaparHtml(v.textoRetraso ?? ETIQUETAS_ESTADO[v.estado])}</p>
+      <ul class="ficha-datos">
+        ${v.cancelado ? '' : `<li><span class="etq">Ahora</span>${escaparHtml(situacion)}</li>`}
+        ${horario}
+        ${antiguedad ? `<li class="${datoViejo ? 'dato-viejo' : ''}"><span class="etq">Posición</span>${escaparHtml(antiguedad)}${datoViejo ? ' · puede no estar al día' : ''}</li>` : ''}
+      </ul>
+      ${v.sintetico ? '<p class="ficha-aviso">Tren ficticio del modo simulado.</p>' : ''}
+      <details class="ficha-tecnico">
+        <summary>Datos técnicos</summary>
+        <dl>
+          ${fila('Viaje', v.tripId)}
+          ${fila('Etiqueta', v.etiqueta)}
+          ${fila('Vehículo', v.vehiculoId)}
+          ${fila('Parada', v.paradaId)}
+          ${fila('Estado GTFS', v.estadoParada)}
+          ${fila('Retraso (s)', v.retrasoSeg)}
+          ${fila('Velocidad', v.velocidadKmh !== null ? `${Math.round(v.velocidadKmh)} km/h` : null)}
+          ${fila('Rumbo', v.rumbo !== null ? `${Math.round(v.rumbo)}°` : null)}
+          ${fila('Fuente', v.fuente)}
+        </dl>
+      </details>
     </div>`;
 }
 
@@ -151,10 +191,10 @@ export class MapaTransporte {
       if (!registro) {
         const marcador = L.marker([v.lat, v.lon], {
           icon: this._icono(v),
-          title: v.etiqueta,
+          title: v.titulo || v.etiqueta,
           keyboard: true,
           riseOnHover: true,
-        }).bindPopup(htmlPopup(v, color), { maxWidth: 280 });
+        }).bindPopup(htmlPopup(v, color), { maxWidth: 300, minWidth: 240 });
         marcador.addTo(this.mapa);
         this.marcadores.set(v.id, { marcador, vehiculo: v, animacion: null });
         continue;

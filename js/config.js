@@ -51,6 +51,8 @@ export const CONFIG = {
   /** Configuración del modo de datos simulados */
   mock: {
     ruta: 'data/mock_gtfs_rt.json',
+    /** Horarios ficticios que traducen los códigos del mock */
+    diccionario: 'data/diccionarios/mock.json',
     /**
      * OJO: el estándar GTFS-RT define position.speed en m/s, pero el mock
      * trae km/h (280.5 en un AVE serían ~1.010 km/h si fueran m/s).
@@ -74,6 +76,10 @@ export const CONFIG = {
    * camelCase) pero SIN cabecera CORS, así que desde GitHub Pages
    * necesitan proxy. No traen rumbo ni velocidad: los marcadores se
    * pintan como punto en vez de flecha.
+   *
+   * diccionario: JSON generado por scripts/generar_diccionarios.py que
+   * traduce trip_id y stop_id a líneas, estaciones y horarios.
+   * servicio: nombre del servicio cuando es común a todo el feed.
    */
   fuentesReales: [
     {
@@ -82,6 +88,9 @@ export const CONFIG = {
       activa: true,
       posiciones: 'https://gtfsrt.renfe.com/vehicle_positions.json',
       actualizacionesViaje: 'https://gtfsrt.renfe.com/trip_updates.json',
+      /** Nombres de estaciones, líneas y horarios (scripts/generar_diccionarios.py) */
+      diccionario: 'data/diccionarios/cercanias.json',
+      servicio: 'Cercanías',
       formato: 'auto',
       unidadVelocidad: 'm/s',
       usarProxy: true,
@@ -92,6 +101,8 @@ export const CONFIG = {
       activa: true,
       posiciones: 'https://gtfsrt.renfe.com/vehicle_positions_LD.json',
       actualizacionesViaje: 'https://gtfsrt.renfe.com/trip_updates_LD.json',
+      diccionario: 'data/diccionarios/ld.json',
+      servicio: '', // el tipo (AVE, Alvia, MD…) sale del diccionario
       formato: 'auto',
       unidadVelocidad: 'm/s',
       usarProxy: true,

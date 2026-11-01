@@ -90,3 +90,12 @@ test('ids de entidad repetidos se desambiguan por trip_id', () => {
   const v = normalizarFeed(feed, { umbrales });
   assert.deepEqual(v.map((x) => x.id), ['VP_1', 'VP_1#B']);
 });
+
+test('detección del desfase de una hora en las marcas de tiempo', async () => {
+  const { detectarDesfaseHorario } = await import('../js/modulos/normalizador.js');
+  const ahora = 1_800_000_000;
+  assert.equal(detectarDesfaseHorario([ahora - 3610, ahora - 3590], ahora), 3600);
+  assert.equal(detectarDesfaseHorario([ahora - 20, ahora + 400], ahora), 0);
+  assert.equal(detectarDesfaseHorario([ahora - 4260], ahora), 3600); // previsiones LD observadas
+  assert.equal(detectarDesfaseHorario([], ahora), 0);
+});

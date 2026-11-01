@@ -32,6 +32,36 @@ function aNumero(valor) {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * Detecta feeds que publican las horas con una hora de retraso (pasa con
+ * el feed de larga distancia de Renfe desde el cambio al horario de
+ * invierno). Si la mediana de las marcas de tiempo va entre 45 y 120
+ * minutos por detrás del reloj, devuelve 3600 s para corregirlo; si no, 0.
+ * Así la corrección desaparece sola el día que el operador lo arregle.
+ *
+ * @param {number[]} tiemposSeg marcas de tiempo Unix (segundos)
+ * @param {number} [ahoraSeg]
+ */
+export function detectarDesfaseHorario(tiemposSeg, ahoraSeg = Date.now() / 1000) {
+  const validos = tiemposSeg.filter((t) => Number.isFinite(t) && t > 0).sort((a, b) => a - b);
+  if (validos.length === 0) return 0;
+  const retraso = ahoraSeg - validos[Math.floor(validos.length / 2)];
+  return retraso >= 45 * 60 && retraso <= 120 * 60 ? 3600 : 0;
+}
+
+/** Marcas de tiempo de un feed: cabecera, vehículos y horas previstas de los TripUpdates */
+export function tiemposDelFeed(feed, { soloPrevisiones = false } = {}) {
+  const tiempos = [];
+  if (!soloPrevisiones) tiempos.push(aNumero(campo(campo(feed, 'header'), 'timestamp')));
+  for (const e of campo(feed, 'entity') || []) {
+    if (!soloPrevisiones) tiempos.push(aNumero(campo(campo(e, 'vehicle'), 'timestamp')));
+    for (const u of campo(campo(e, 'trip_update'), 'stop_time_update') || []) {
+      tiempos.push(aNumero(campo(campo(u, 'arrival'), 'time')) ?? aNumero(campo(campo(u, 'departure'), 'time')));
+    }
+  }
+  return tiempos.filter((t) => t !== null);
+}
+
 /** Pasa velocidad a km/h según la unidad declarada por la fuente */
 export function velocidadAKmh(velocidad, unidad = 'm/s') {
   const v = aNumero(velocidad);
@@ -63,11 +93,24 @@ function retrasoDeTripUpdate(tripUpdate) {
 }
 
 /**
- * Construye un índice trip_id → {retrasoSeg, cancelado} a partir de uno
+ * Primera parada con hora prevista de llegada (o salida) del TripUpdate.
+ * @returns {{paradaId: string|null, tiempo: number}|null} tiempo en segundos Unix
+ */
+function proximaLlegadaDeTripUpdate(tripUpdate, desfaseSeg = 0) {
+  for (const parada of campo(tripUpdate, 'stop_time_update') || []) {
+    const tiempo =
+      aNumero(campo(campo(parada, 'arrival'), 'time')) ?? aNumero(campo(campo(parada, 'departure'), 'time'));
+    if (tiempo) return { paradaId: campo(parada, 'stop_id') ?? null, tiempo: tiempo + desfaseSeg };
+  }
+  return null;
+}
+
+/**
+ * Construye un índice trip_id → {retrasoSeg, cancelado, proximaLlegada} a partir de uno
  * o varios feeds de TripUpdates (o de un feed mixto).
  * @param {object[]} feeds
  */
-export function indexarActualizacionesViaje(feeds) {
+export function indexarActualizacionesViaje(feeds, { desfaseSeg = 0 } = {}) {
   const indice = new Map();
   for (const feed of feeds.filter(Boolean)) {
     for (const entidad of campo(feed, 'entity') || []) {
@@ -79,6 +122,7 @@ export function indexarActualizacionesViaje(feeds) {
       indice.set(String(tripId), {
         retrasoSeg: retrasoDeTripUpdate(tu),
         cancelado: estaCancelado(trip),
+        proximaLlegada: proximaLlegadaDeTripUpdate(tu, desfaseSeg),
       });
     }
   }
@@ -91,13 +135,14 @@ export function indexarActualizacionesViaje(feeds) {
  * @param {object} feedPosiciones feed GTFS-RT con entidades `vehicle`
  * @param {object} opciones
  * @param {Map}    [opciones.indiceViajes] resultado de indexarActualizacionesViaje
+ * @param {number} [opciones.desfaseSeg=0] segundos a sumar a las marcas de tiempo
  * @param {string} [opciones.unidadVelocidad='m/s']
  * @param {{slight:number, severe:number}} opciones.umbrales minutos
  * @param {string} [opciones.fuente] nombre de la fuente (para el panel)
  * @returns {object[]} vehículos normalizados
  */
 export function normalizarFeed(feedPosiciones, opciones) {
-  const { indiceViajes = new Map(), unidadVelocidad = 'm/s', umbrales, fuente = '' } = opciones;
+  const { indiceViajes = new Map(), unidadVelocidad = 'm/s', umbrales, fuente = '', desfaseSeg = 0 } = opciones;
   const tsCabecera = aNumero(campo(campo(feedPosiciones, 'header'), 'timestamp'));
   const vehiculos = [];
   // Algunos feeds (p. ej. Renfe LD) repiten el id de entidad para viajes
@@ -145,9 +190,10 @@ export function normalizarFeed(feedPosiciones, opciones) {
       estadoParada: campo(vp, 'current_status') ?? null,
       secuenciaParada: aNumero(campo(vp, 'current_stop_sequence')),
       paradaId: campo(vp, 'stop_id') ?? null,
-      timestampMs: ts !== null ? ts * 1000 : null,
+      timestampMs: ts !== null ? (ts + desfaseSeg) * 1000 : null,
       retrasoSeg,
       cancelado,
+      proximaLlegada: infoViaje?.proximaLlegada ?? null,
       fuente,
       sintetico: Boolean(entidad._sintetico),
     };

@@ -82,22 +82,40 @@ body[data-cargando='true'] #btn-refrescar { opacity: 0.6; pointer-events: none; 
 }
 .marcador-tren:hover svg { transform: scale(1.15); }
 
-/* ---------- Popups ---------- */
+/* ---------- Pastilla de línea / servicio ---------- */
+.pildora {
+  display: inline-flex; align-items: center; flex-shrink: 0;
+  padding: 1px 6px; border-radius: 4px;
+  font-size: 11px; font-weight: 700; line-height: 1.4; letter-spacing: 0.01em;
+}
+
+/* ---------- Ficha del tren (popup) ---------- */
 .leaflet-popup-content-wrapper { border-radius: 0.75rem; }
 .leaflet-popup-content { margin: 12px 14px; font-family: inherit; }
-.popup-tren .popup-titulo { margin: 0 0 4px; font-weight: 600; font-size: 14px; color: #0f172a; }
-.popup-tren .popup-estado {
+.ficha-cabecera { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #64748b; }
+.ficha .ficha-titulo { margin: 6px 0 2px; font-weight: 600; font-size: 15px; line-height: 1.3; color: #0f172a; }
+.ficha .ficha-estado {
   display: flex; align-items: center; gap: 6px;
-  margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--c);
+  margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--c);
 }
-.popup-tren .punto { width: 8px; height: 8px; border-radius: 9999px; background: var(--c); }
-.popup-tren dl {
+.ficha .punto { width: 8px; height: 8px; border-radius: 9999px; background: var(--c); }
+.ficha-datos { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; color: #1e293b; }
+.ficha-datos .etq {
+  display: inline-block; min-width: 62px; margin-right: 6px;
+  font-size: 11px; font-weight: 500; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.03em;
+}
+.ficha-datos s { color: #94a3b8; }
+.ficha-datos .dato-viejo { color: #b45309; }
+.ficha .ficha-aviso { margin: 8px 0 0; font-size: 11px; color: #92400e; }
+.ficha-tecnico { margin-top: 10px; border-top: 1px solid #f1f5f9; padding-top: 6px; }
+.ficha-tecnico summary { cursor: pointer; font-size: 11px; color: #94a3b8; }
+.ficha-tecnico summary:hover { color: #475569; }
+.ficha-tecnico dl {
   display: grid; grid-template-columns: auto 1fr; gap: 2px 12px;
-  margin: 0; font-size: 12px;
+  margin: 6px 0 0; font-size: 11px;
 }
-.popup-tren dt { color: #64748b; }
-.popup-tren dd { margin: 0; color: #0f172a; font-variant-numeric: tabular-nums; }
-.popup-tren .popup-aviso { margin: 8px 0 0; font-size: 11px; color: #92400e; }
+.ficha-tecnico dt { color: #94a3b8; }
+.ficha-tecnico dd { margin: 0; color: #334155; font-variant-numeric: tabular-nums; word-break: break-all; }
 
 /* ---------- Leyenda ---------- */
 .leyenda-mapa {

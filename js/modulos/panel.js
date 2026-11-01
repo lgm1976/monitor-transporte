@@ -7,7 +7,12 @@
  */
 
 import { ETIQUETAS_ESTADO, ORDEN_ESTADOS, formatearRetraso } from './estado.js';
-import { escaparHtml } from './mapa.js';
+import { escaparHtml, htmlPildora } from './mapa.js';
+
+/** Minúsculas y sin tildes, para que «sevilla» encuentre «Sevilla» y «cordoba» «Córdoba» */
+export function normalizarTexto(texto) {
+  return String(texto ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
 
 export class PanelLateral {
   /**
@@ -30,7 +35,7 @@ export class PanelLateral {
 
     this._pintarContadores();
     this.elBuscador.addEventListener('input', () => {
-      this.textoBusqueda = this.elBuscador.value.trim().toLowerCase();
+      this.textoBusqueda = normalizarTexto(this.elBuscador.value.trim());
       this.alCambiarFiltro();
     });
     this.elLista.addEventListener('click', (e) => {
@@ -63,13 +68,17 @@ export class PanelLateral {
     });
   }
 
-  /** Aplica filtros de estado y texto */
+  /** Aplica filtros de estado y texto (estación, línea, nº de tren, núcleo…) */
   filtrar(vehiculos) {
     const q = this.textoBusqueda;
     return vehiculos.filter((v) => {
       if (!this.estadosActivos.has(v.estado)) return false;
       if (!q) return true;
-      return [v.etiqueta, v.tripId, v.rutaId, v.vehiculoId].some((t) => t && String(t).toLowerCase().includes(q));
+      const campos = [
+        v.titulo, v.origen, v.destino, v.paradaNombre, v.numeroTren, v.linea?.nombre,
+        v.servicio, v.nucleo, v.etiqueta, v.tripId,
+      ];
+      return campos.some((t) => t && normalizarTexto(t).includes(q));
     });
   }
 
@@ -87,27 +96,32 @@ export class PanelLateral {
     // Orden: cancelados y mayores retrasos primero; lo urgente arriba
     const peso = { cancelled: 3, severe_delay: 2, slight_delay: 1, on_time: 0, unknown: -1 };
     const ordenados = [...visibles].sort(
-      (a, b) => peso[b.estado] - peso[a.estado] || (b.retrasoSeg ?? -1) - (a.retrasoSeg ?? -1) || a.etiqueta.localeCompare(b.etiqueta, 'es')
+      (a, b) => peso[b.estado] - peso[a.estado] || (b.retrasoSeg ?? -1) - (a.retrasoSeg ?? -1) || String(a.titulo || a.etiqueta).localeCompare(String(b.titulo || b.etiqueta), 'es')
     );
 
     this.elVacio.hidden = ordenados.length > 0;
     this.elLista.innerHTML = ordenados
-      .map(
-        (v) => `
+      .map((v) => {
+        const detalle = v.cancelado
+          ? 'Tren cancelado'
+          : [v.situacion, v.anden ? `andén ${v.anden}` : null].filter(Boolean).join(' · ');
+        const corto = v.estado === 'cancelled' ? 'Cancelado' : formatearRetraso(v.retrasoSeg);
+        return `
       <li>
         <button type="button" data-id="${escaparHtml(v.id)}"
           class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-slate-50 focus:bg-slate-50 focus:outline-none">
           <i class="h-2.5 w-2.5 shrink-0 rounded-full" style="background:${this.colorDe(v.estado)}"></i>
           <span class="min-w-0 flex-1">
-            <span class="block truncate text-sm font-medium text-slate-800">${escaparHtml(v.etiqueta)}</span>
-            <span class="block truncate text-xs text-slate-500">${escaparHtml([v.tripId, v.rutaId].filter(Boolean).join(' · '))}${v.sintetico ? ' · simulado' : ''}</span>
+            <span class="flex items-center gap-1.5">
+              ${htmlPildora(v)}
+              <span class="truncate text-sm font-medium text-slate-800">${escaparHtml(v.titulo || v.etiqueta)}</span>
+            </span>
+            <span class="mt-0.5 block truncate text-xs text-slate-500">${escaparHtml(detalle)}${v.sintetico ? ' · simulado' : ''}</span>
           </span>
-          <span class="shrink-0 text-xs font-semibold tabular-nums" style="color:${this.colorDe(v.estado)}">
-            ${v.estado === 'cancelled' ? 'Cancelado' : escaparHtml(formatearRetraso(v.retrasoSeg))}
-          </span>
+          <span class="shrink-0 text-xs font-semibold tabular-nums" style="color:${this.colorDe(v.estado)}">${escaparHtml(corto)}</span>
         </button>
-      </li>`
-      )
+      </li>`;
+      })
       .join('');
   }
 }

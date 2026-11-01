@@ -14,6 +14,7 @@
 import { CONFIG } from '../config.js';
 import { pedirJson } from '../utilidades/red.js';
 import { normalizarFeed } from '../modulos/normalizador.js';
+import { Diccionario, enriquecerVehiculo } from '../modulos/diccionario.js';
 
 const RADIO_TIERRA_M = 6371000;
 /** Caja aproximada de la España peninsular; si un tren sale, da la vuelta */
@@ -26,8 +27,8 @@ const SINTETICOS = [
     vehicle: {
       trip: { trip_id: 'MD-18000', route_id: 'SEV-MAL', start_time: '09:40:00' },
       position: { latitude: 37.38, longitude: -5.97, bearing: 120, speed: 120 },
-      current_status: 'IN_TRANSIT_TO', current_stop_sequence: 2,
-      vehicle: { id: 'MD-449', label: 'Media Distancia Sevilla - Málaga (simulado)' },
+      current_status: 'IN_TRANSIT_TO', current_stop_sequence: 2, stop_id: '54413',
+      vehicle: { id: 'MD-449', label: '18000' },
     },
     delay_seconds: 1260, // 21 min → retraso grave
   },
@@ -36,8 +37,8 @@ const SINTETICOS = [
     vehicle: {
       trip: { trip_id: 'AVLO-6252', route_id: 'MAD-VAL', start_time: '12:05:00', schedule_relationship: 'CANCELED' },
       position: { latitude: 39.86, longitude: -1.95, bearing: 110, speed: 0 },
-      current_status: 'STOPPED_AT', current_stop_sequence: 1,
-      vehicle: { id: 'AVLO-07', label: 'Avlo Madrid - Valencia (simulado)' },
+      current_status: 'STOPPED_AT', current_stop_sequence: 1, stop_id: '37500',
+      vehicle: { id: 'AVLO-07', label: '06252' },
     },
     delay_seconds: 0,
   },
@@ -46,8 +47,8 @@ const SINTETICOS = [
     vehicle: {
       trip: { trip_id: 'C4-24510', route_id: 'C4', start_time: '10:52:00' },
       position: { latitude: 40.47, longitude: -3.69, bearing: 0, speed: 70 },
-      current_status: 'IN_TRANSIT_TO', current_stop_sequence: 5,
-      vehicle: { id: 'CIVIA-463', label: 'Cercanías C-4 Parla - Alcobendas (simulado)' },
+      current_status: 'INCOMING_AT', current_stop_sequence: 5, stop_id: '18002',
+      vehicle: { id: 'CIVIA-463', label: 'C4-24510-PLATF.(3)' },
     },
     delay_seconds: 120, // 2 min → puntual
   },
@@ -56,8 +57,8 @@ const SINTETICOS = [
     vehicle: {
       trip: { trip_id: 'R1-77000', route_id: 'R1', start_time: '10:10:00' },
       position: { latitude: 41.45, longitude: 2.25, bearing: 45, speed: 80 },
-      current_status: 'IN_TRANSIT_TO', current_stop_sequence: 7,
-      vehicle: { id: '447-012', label: 'Rodalies R1 Molins - Maçanet (simulado)' },
+      current_status: 'IN_TRANSIT_TO', current_stop_sequence: 7, stop_id: '79404',
+      vehicle: { id: '447-012', label: 'R1-77000' },
     },
     // sin delay_seconds → estado "Sin datos"
   },
@@ -87,6 +88,13 @@ export class FuenteMock {
     if (this.feed) return;
     const base = await pedirJson(CONFIG.mock.ruta);
     this.feed = structuredClone(base);
+    // Horarios ficticios para validar la ficha legible sin datos reales
+    try {
+      this.diccionario = new Diccionario(await pedirJson(CONFIG.mock.diccionario));
+    } catch (error) {
+      console.warn('[mock] Sin diccionario, se mostrarán códigos:', error.message);
+      this.diccionario = new Diccionario();
+    }
     if (CONFIG.mock.generarSinteticos) {
       this.feed.entity.push(...structuredClone(SINTETICOS));
     }
@@ -137,6 +145,6 @@ export class FuenteMock {
       unidadVelocidad: CONFIG.mock.unidadVelocidad,
       umbrales: this.umbrales,
       fuente: this.nombre,
-    });
+    }).map((v) => enriquecerVehiculo(v, this.diccionario));
   }
 }

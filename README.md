@@ -16,7 +16,8 @@ js/
   config.js                ← Único archivo de configuración
   app.js                   Arranque y bucle de refresco
   modulos/
-    estado.js              Clasificación de puntualidad (puro, testeable)
+    estado.js              Clasificación de puntualidad y frases (puro, testeable)
+    diccionario.js         Códigos → línea, estación, horario (puro, testeable)
     normalizador.js        GTFS-RT → modelo interno (puro, testeable)
     mapa.js                Leaflet: marcadores, animación, popups, leyenda
     panel.js               Contadores-filtro, buscador y listado
@@ -29,10 +30,15 @@ data/
   estilo_mapa.json         Colores del tema y umbrales de retraso
   mock_gtfs_rt.json        Feed de ejemplo para el modo simulado
   gtfs-realtime.proto      Esquema GTFS-RT (subconjunto) para binarios
+  diccionarios/            Estaciones, líneas y viajes (se regeneran cada noche)
+    cercanias.json, ld.json, mock.json
+scripts/
+  generar_diccionarios.py  Descarga el GTFS estático de Renfe y crea los diccionarios
+.github/workflows/
+  diccionarios.yml         Ejecuta el script cada noche y sube los cambios
 proxy/
   cloudflare-worker.js     Proxy CORS opcional con lista blanca
-tests/
-  normalizador.test.mjs    Pruebas con `node --test`
+tests/                     Pruebas con `node --test`
 ```
 
 ## Probar en local
@@ -98,11 +104,30 @@ Configura las fuentes en `CONFIG.fuentesReales`:
   - **No envían cabecera CORS**: desde GitHub Pages necesitan el proxy (ver abajo). Sin él verás un aviso en la cabecera.
   - **No traen rumbo ni velocidad**: los marcadores salen como punto, sin flecha.
   - El de larga distancia **repite el id de entidad** para viajes distintos del mismo tren; el normalizador lo desambigua con el `trip_id`.
-  - La marca de tiempo de cabecera del feed de larga distancia iba unos 60 minutos por detrás de la de Cercanías en la prueba; conviene vigilarlo antes de mostrar «hace X segundos».
+  - Las horas del feed de larga distancia llegan con una hora de retraso; la app lo corrige (ver «De códigos a información legible»).
 - Si un feed llega en binario, se carga `protobuf.js` desde CDN la primera vez y se decodifica con `data/gtfs-realtime.proto`.
 - Si una fuente falla, las demás siguen pintándose y se muestra un aviso con el detalle.
 - Ante fallos repetidos, el intervalo de refresco se alarga (hasta ×6) y vuelve a la normalidad al recuperarse.
 - Con la pestaña en segundo plano no se hacen peticiones.
+
+## De códigos a información legible
+
+El feed en tiempo real solo trae identificadores (`3004D18779C3`, parada `51003`, etiqueta `C3-18779-PLATF.(2)`). La app los traduce con unos diccionarios generados a partir del **GTFS estático** de Renfe, de modo que cada tren se muestra como:
+
+> **C3** Cercanías Sevilla · **Sevilla-Santa Justa → Cazalla-Constantina** · 12 min tarde
+> Ahora: llegando a San Jerónimo · andén 2 · Horario: sale 18:05 · llega ~~19:10~~ **19:22**
+
+- `scripts/generar_diccionarios.py` descarga los dos ZIP de Renfe (Cercanías y AV/LD/MD), se queda con los viajes de **ayer, hoy y mañana** y guarda línea (con su color oficial), núcleo o tipo de tren, estaciones de origen y destino y horas. Resultado: unos 450 KB y 130 KB (≈100 KB comprimidos en total). Solo usa la biblioteca estándar de Python.
+- En la prueba del 01/11/2026 el cruce fue completo: 305 de 305 trenes de Cercanías y 201 de 202 de larga distancia (el que falta era un tren especial sin horario publicado).
+- La etiqueta de Cercanías se descompone en línea, número de tren y andén.
+- Si falta un diccionario o un viaje no está en la ventana, la ficha muestra lo que haya («Tren 15868») sin romperse; los códigos siguen disponibles en «Datos técnicos».
+- El buscador encuentra por estación, línea, núcleo o número de tren, sin importar tildes ni mayúsculas.
+
+**Actualización automática.** La GitHub Action `diccionarios.yml` ejecuta el script cada noche (04:37 en Madrid) y hace commit si algo cambia; GitHub Pages republica solo. Para lanzarla a mano: pestaña **Actions → Actualizar diccionarios GTFS → Run workflow**. Si falla al subir, revisa **Settings → Actions → General → Workflow permissions** y marca «Read and write permissions». Como la ventana es de tres días, si la Action dejara de ejecutarse los nombres desaparecerían en un par de días (la app seguiría funcionando con códigos).
+
+Para generarlos en local: `python3 scripts/generar_diccionarios.py`.
+
+**Desfase horario del feed de larga distancia.** Desde el cambio al horario de invierno, Renfe publica las marcas de tiempo de las posiciones y las horas previstas de AV/LD/MD con una hora de retraso. La app lo detecta sola (si la mediana va entre 45 y 120 minutos por detrás del reloj, suma una hora) y deja de corregir en cuanto Renfe lo arregle.
 
 ## CORS: cuándo y cómo usar el proxy
 
@@ -141,6 +166,8 @@ Usa las teselas estándar de OpenStreetMap, que no piden clave pero están pensa
 ## Próximos pasos sugeridos
 
 - Agrupar marcadores (Leaflet.markercluster) al ver toda España con los dos feeds de Renfe.
-- Cargar el GTFS estático (paradas y rutas) para mostrar nombres de estación y trazados.
+- Filtros por tipo de servicio y por núcleo de Cercanías; arrancar centrado en la zona del usuario.
+- Panel de estación con próximas llegadas, favoritos y enlace para compartir un tren (`?tren=15868`).
+- Trazado de las líneas (shapes.txt de Cercanías).
 - Capa de avisos de servicio (`Alert` de GTFS-RT).
 - Filtro por operador o tipo de servicio cuando haya varias fuentes.

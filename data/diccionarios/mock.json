@@ -1,0 +1,42 @@
+{
+  "fuente": "Datos simulados (horarios ficticios)",
+  "generado": "2026-11-01T19:30:00+01:00",
+  "ventana": ["2026-11-01", "2026-11-01"],
+  "formato": {
+    "lineas": ["nombre", "color", "colorTexto", "grupo"],
+    "viajes": ["linea", "origen", "destino", "salida", "llegada"]
+  },
+  "lineas": [
+    ["AVE", "", "", "AVE"],
+    ["Alvia", "", "", "Alvia"],
+    ["Media Distancia", "", "", "Media Distancia"],
+    ["Avlo", "", "", "Avlo"],
+    ["C4", "2C2A86", "FFFFFF", "Cercanías"],
+    ["R1", "7DBCEC", "FFFFFF", "Cercanías"]
+  ],
+  "estaciones": {
+    "60000": "Madrid-Puerta de Atocha-Almudena Grandes",
+    "71801": "Barcelona-Sants",
+    "17000": "Madrid-Chamartín-Clara Campoamor",
+    "15211": "Gijón",
+    "10600": "Valladolid-Campo Grande",
+    "51003": "Sevilla-Santa Justa",
+    "54413": "Málaga-María Zambrano",
+    "65000": "València-Joaquín Sorolla",
+    "35609": "Parla",
+    "17009": "Alcobendas-San Sebastián de los Reyes",
+    "18002": "Nuevos Ministerios",
+    "79009": "Molins de Rei",
+    "79300": "Maçanet-Massanes",
+    "79404": "Badalona",
+    "37500": "Cuenca Fernando Zóbel"
+  },
+  "viajes": {
+    "AVE-3092": [0, "60000", "71801", "10:30", "13:20"],
+    "ALVIA-04183": [1, "17000", "15211", "11:15", "16:40"],
+    "MD-18000": [2, "51003", "54413", "09:40", "11:40"],
+    "AVLO-6252": [3, "60000", "65000", "12:05", "13:57"],
+    "C4-24510": [4, "35609", "17009", "10:52", "11:58"],
+    "R1-77000": [5, "79009", "79300", "10:10", "12:05"]
+  }
+}

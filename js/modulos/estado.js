@@ -50,7 +50,29 @@ export function clasificarEstado(vehiculo, umbralesMin) {
 }
 
 /**
- * Texto legible del retraso: "Puntual", "+12 min", "−3 min", "—".
+ * Frase completa del retraso para la ficha del tren.
+ * "Puntual", "12 min tarde", "3 min adelantado", "Sin datos de puntualidad".
+ * @param {number|null} retrasoSeg
+ */
+export function describirRetraso(retrasoSeg) {
+  if (retrasoSeg === null || retrasoSeg === undefined) return 'Sin datos de puntualidad';
+  const min = Math.round(retrasoSeg / 60);
+  if (min === 0) return 'Puntual';
+  return min > 0 ? `${min} min tarde` : `${Math.abs(min)} min adelantado`;
+}
+
+/** Antigüedad de un dato: "ahora", "hace 40 s", "hace 12 min", "hace 2 h" */
+export function describirAntiguedad(timestampMs, ahoraMs = Date.now()) {
+  if (!timestampMs) return null;
+  const s = Math.max(0, Math.round((ahoraMs - timestampMs) / 1000));
+  if (s < 10) return 'ahora';
+  if (s < 60) return `hace ${s} s`;
+  if (s < 3600) return `hace ${Math.round(s / 60)} min`;
+  return `hace ${Math.round(s / 3600)} h`;
+}
+
+/**
+ * Texto corto del retraso: "Puntual", "+12 min", "−3 min", "—".
  * @param {number|null} retrasoSeg
  */
 export function formatearRetraso(retrasoSeg) {
