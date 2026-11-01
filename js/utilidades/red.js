@@ -20,7 +20,14 @@ export class ErrorRed extends Error {
 /** Antepone el proxy CORS a una URL si está configurado */
 export function aplicarProxy(url, usarProxy) {
   if (!usarProxy || !CONFIG.proxyCors) return url;
-  return `${CONFIG.proxyCors}${CONFIG.proxyCors.includes('?') ? '&' : '?'}url=${encodeURIComponent(url)}`;
+  
+  // Si proxyCors ya termina en "url=", concatenamos directamente. Si no, añadimos el parámetro.
+  if (CONFIG.proxyCors.endsWith('url=') || CONFIG.proxyCors.endsWith('url=')) {
+    return `${CONFIG.proxyCors}${encodeURIComponent(url)}`;
+  }
+  
+  const conector = CONFIG.proxyCors.includes('?') ? '&' : '?';
+  return `${CONFIG.proxyCors}${conector}url=${encodeURIComponent(url)}`;
 }
 
 /**
