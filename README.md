@@ -188,7 +188,7 @@ Pestaña **«Próximo tren»** del panel lateral. Eliges el núcleo de Cercanía
 - Los **próximos seis trenes**, ordenados por salida: cuánto falta («en 4 min»), hora de salida, hora de llegada, duración y hacia dónde va el tren (útil en el andén).
 - **Retraso en vivo** de los trenes que ya circulan: la hora programada aparece tachada junto a la prevista, y la etiqueta dice «En vivo · 12 min tarde». Los que aún no han salido de cabecera se muestran «Según horario». Los cancelados se ven tachados.
 - **Ver en el mapa**: sigue ese tren (misma tarjeta y enlace que «Seguir este tren»).
-- Si ningún tren hace el trayecto directo, lo dice: hará falta un transbordo.
+- **Con un transbordo** cuando ningún tren hace el trayecto directo (ver abajo).
 
 Cómo se calcula (`js/modulos/trayectos.js`):
 
@@ -201,7 +201,15 @@ Los horarios salen del GTFS de Renfe, con **todas las paradas** de cada tren de 
 
 El trayecto queda en la URL, así que se puede guardar en favoritos o en la pantalla de inicio del móvil: `?red=madrid&desde=18002&hasta=70002`. Además, el navegador recuerda el último trayecto.
 
-Límites: solo trenes directos dentro de un mismo núcleo de Cercanías (sin transbordos ni otros operadores).
+**Trayectos con un transbordo.** Si ninguna línea va directa (p. ej. Fuenlabrada → Alcobendas), la app combina dos trenes:
+
+- Para cada tren que sale del origen, prueba a bajarse en cada estación posterior de su recorrido y coger allí el tren que **antes llegue al destino**, dejando al menos **4 minutos** para cambiar (`TRANSBORDO_MIN`) y como mucho 60 de espera.
+- El retraso en vivo cuenta en los dos tramos: si el primer tren va tarde y ya no da tiempo al enlace, propone el siguiente.
+- Se descartan las combinaciones que salen antes pero llegan igual o más tarde que otra.
+- Cada opción muestra cuánto falta para el primer tren, la hora de llegada final, la duración total y los dos tramos con línea, horas, sentido, estado (en vivo o según horario) y la estación de cambio con los minutos de espera. «Ver en el mapa» funciona para cada tramo que ya circula.
+- Solo se ofrece cuando no hay tren directo. Se calcula en el navegador en menos de 15 ms.
+
+Límites: como mucho un transbordo y siempre dentro del mismo núcleo de Cercanías. El cambio se considera en la misma estación (no entre estaciones distintas cercanas, como Sol y otra) y no se tienen en cuenta otros operadores ni el metro.
 
 ## Trenes OUIGO según horario
 
@@ -261,7 +269,7 @@ Usa las teselas estándar de OpenStreetMap, que no piden clave pero están pensa
 - Agrupar marcadores (Leaflet.markercluster) al ver toda España con los dos feeds de Renfe.
 - Arrancar centrado en la zona del usuario (con permiso de ubicación).
 - Panel de estación con próximas llegadas y favoritos («mi C-4 de cada mañana»).
-- Próximo tren con transbordo (una conexión) y también para Media Distancia.
+- Ofrecer el transbordo también cuando llega antes que el directo; dos transbordos; Media Distancia.
 - Trazado de las líneas (shapes.txt de Cercanías).
 - Capa de avisos de servicio (`Alert` de GTFS-RT).
 - Filtro por operador cuando haya fuentes de otros operadores.

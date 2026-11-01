@@ -14,7 +14,10 @@ import { CONFIG } from '../config.js';
 import { pedirJson } from '../utilidades/red.js';
 import { escaparHtml } from './mapa.js';
 import { normalizarTexto } from './panel.js';
-import { prepararNucleo, proximosTrenes, lineasDelTrayecto, estacionesOrdenadas, textoFaltan } from './trayectos.js';
+import {
+  prepararNucleo, proximosTrenes, proximosConTransbordo, lineasDelTrayecto, estacionesOrdenadas,
+  textoFaltan, textoDuracion, TRANSBORDO_MIN,
+} from './trayectos.js';
 
 const CLAVE_GUARDADO = 'monitor-transporte:trayecto';
 /** Cada cuánto se recalcula la cuenta atrás aunque no lleguen datos nuevos */
@@ -180,6 +183,60 @@ export class PanelTrayecto {
     if (this.activo) this._pintarResultados();
   }
 
+  /** Etiqueta de estado de un tramo: en vivo (con retraso o puntual) o según horario */
+  _etiquetaEstado(t) {
+    if (t.cancelado) return '<span class="trayecto-estado cancelado">Cancelado</span>';
+    if (!t.enVivo) return '<span class="trayecto-estado programado">Según horario</span>';
+    return t.retrasoMin > 0
+      ? `<span class="trayecto-estado retraso">En vivo · ${t.retrasoMin} min tarde</span>`
+      : '<span class="trayecto-estado vivo">En vivo · puntual</span>';
+  }
+
+  /** Hora con la programada tachada si hay retraso */
+  _hora(t) {
+    return t.retrasoMin > 0 ? `<s>${t.sale}</s> <strong>${t.salePrevista}</strong>` : `<strong>${t.sale}</strong>`;
+  }
+
+  /** Lista de trayectos con transbordo */
+  _pintarTransbordos(opciones, pildora) {
+    if (opciones.length === 0) {
+      this.elLineas.innerHTML = '';
+      this.elResultados.innerHTML =
+        '<p class="trayecto-vacio">Ningún tren directo hace este trayecto y no hay combinaciones con un solo transbordo en las próximas horas.</p>';
+      return;
+    }
+    // Resumen: «Con transbordo en Madrid-Atocha: C3 + C2»
+    const combinaciones = [...new Set(opciones.map((x) => `${x.transbordo.estacion}|${x.tramo1.linea.nombre}|${x.tramo2.linea.nombre}`))];
+    const [estacion] = combinaciones[0].split('|');
+    this.elLineas.innerHTML = `<span>Sin tren directo. Con transbordo en <strong>${escaparHtml(estacion)}</strong>${combinaciones.length > 1 ? ' y otras' : ''}:</span> ${pildora(opciones[0].tramo1.linea)} + ${pildora(opciones[0].tramo2.linea)}`;
+
+    const tramo = (n, t, hasta) => `
+      <div class="tramo">
+        <span class="tramo-num">${n}</span>
+        <div class="tramo-cuerpo">
+          <p class="tramo-linea">${pildora(t.linea)} ${this._hora(t)} → ${escaparHtml(hasta)} ${t.llega}</p>
+          <p class="tramo-detalle">Hacia ${escaparHtml(t.haciaNombre)} · ${this._etiquetaEstado(t)}
+            ${t.idVehiculo ? `<button type="button" class="trayecto-ver" data-ver-vehiculo="${escaparHtml(t.idVehiculo)}">Ver en el mapa</button>` : ''}</p>
+        </div>
+      </div>`;
+
+    const destino = this._nombre(this.estado.hasta);
+    this.elResultados.innerHTML = opciones
+      .map((x) => `
+        <li class="trayecto-tren">
+          <div class="trayecto-fila">
+            ${pildora(x.tramo1.linea)}
+            <span class="trayecto-faltan">${textoFaltan(x.faltanMin)}</span>
+            <span class="trayecto-hora">llega <strong>${x.llega}</strong></span>
+          </div>
+          <p class="trayecto-detalle">${textoDuracion(x.duracionMin)} en total · 1 transbordo</p>
+          ${tramo(1, x.tramo1, x.transbordo.estacion)}
+          <p class="tramo-cambio">Cambio en ${escaparHtml(x.transbordo.estacion)} · ${x.transbordo.esperaMin} min de espera</p>
+          ${tramo(2, x.tramo2, destino)}
+        </li>`)
+      .join('');
+  }
+
   _pintarResultados() {
     if (!this.nucleo) return;
     const { desde, hasta } = this.estado;
@@ -205,10 +262,13 @@ export class PanelTrayecto {
     const enVivo = new Map(this.vehiculos.filter((v) => v.tripId && !v.segunHorario).map((v) => [v.tripId, v]));
     const trenes = proximosTrenes(this.nucleo, desde, hasta, Date.now(), enVivo);
 
+    // Sin ningún tren directo posible: combinaciones con un transbordo
+    if (lineas.length === 0) {
+      this._pintarTransbordos(proximosConTransbordo(this.nucleo, desde, hasta, Date.now(), enVivo), pildora);
+      return;
+    }
     if (trenes.length === 0) {
-      this.elResultados.innerHTML = lineas.length
-        ? '<p class="trayecto-vacio">No hay más trenes para este trayecto en las próximas horas.</p>'
-        : '<p class="trayecto-vacio">Ningún tren directo hace este trayecto. Puede que haga falta un transbordo.</p>';
+      this.elResultados.innerHTML = '<p class="trayecto-vacio">No hay más trenes para este trayecto en las próximas horas.</p>';
       return;
     }
 

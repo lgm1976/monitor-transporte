@@ -5,7 +5,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { prepararNucleo, proximosTrenes, lineasDelTrayecto, numeroDesdeTrip, textoFaltan, estacionesOrdenadas } from '../js/modulos/trayectos.js';
+import {
+  prepararNucleo, proximosTrenes, proximosConTransbordo, lineasDelTrayecto, numeroDesdeTrip, textoFaltan, textoDuracion, estacionesOrdenadas,
+} from '../js/modulos/trayectos.js';
 
 // Núcleo mínimo: A → B → C → D (C2) y A → B → E (C7, no pasa por C)
 const nucleo = prepararNucleo({
@@ -21,6 +23,8 @@ const nucleo = prepararNucleo({
     ['1004D10004C2', 1, 0, 2, 590, [40, 4, 5]], // sentido contrario: C antes que A
     ['1003D10005C2', 0, 0, 0, 1445, [5, 4, 40]], // de ayer: A a las 00:05 de hoy
     ['1005D10006C2', 2, 0, 0, 10, [5, 4, 40]], //   de mañana: A 00:10
+    ['1004D10007C7', 1, 1, 1, 640, [5, 20]], //    A 10:40 · B 10:45 · E 11:05
+    ['1004D10008C7', 1, 1, 1, 650, [5, 30]], //    A 10:50 · B 10:55 · E 11:25 (llega más tarde)
   ],
 });
 const enMadrid = (hhmm, dia = '2026-11-01') => Date.parse(`${dia}T${hhmm}:00+01:00`);
@@ -80,4 +84,34 @@ test('líneas del trayecto y textos', () => {
   assert.equal(textoFaltan(7), 'en 7 min');
   assert.equal(textoFaltan(70), 'en 1 h 10 min');
   assert.equal(estacionesOrdenadas(nucleo)[0].nombre, 'Atocha');
+});
+
+test('trayecto con un transbordo', () => {
+  // De C a E no hay directo: C2 (sentido contrario) C 10:30 → B 10:34, C7 B 10:45 → E 11:05
+  assert.deepEqual(lineasDelTrayecto(nucleo, 'C', 'E'), []);
+  const [op, ...resto] = proximosConTransbordo(nucleo, 'C', 'E', enMadrid('10:20'));
+  assert.equal(resto.length, 0, 'el C7 de las 10:55 llega más tarde: queda descartado');
+  assert.equal(op.tramo1.linea.nombre, 'C2');
+  assert.equal(op.tramo1.sale, '10:30');
+  assert.equal(op.tramo1.llega, '10:34');
+  assert.equal(op.transbordo.estacion, 'Atocha', 'en A también se cruza, pero con solo 1 min no da tiempo');
+  assert.equal(op.transbordo.esperaMin, 11);
+  assert.equal(op.tramo2.linea.nombre, 'C7');
+  assert.equal(op.tramo2.sale, '10:45');
+  assert.equal(op.llega, '11:05');
+  assert.equal(op.duracionMin, 35);
+  assert.equal(op.faltanMin, 10);
+});
+
+test('transbordo con retraso en vivo', () => {
+  // El C2 va 10 min tarde: llega a B a las 10:44 y ya no da tiempo a coger el C7 de las 10:45
+  const enVivo = new Map([['1004D10004C2', { id: 'v4', retrasoSeg: 600, paradaId: 'D', estadoParada: 'IN_TRANSIT_TO' }]]);
+  const [op] = proximosConTransbordo(nucleo, 'C', 'E', enMadrid('10:20'), enVivo);
+  assert.equal(op.tramo1.salePrevista, '10:40');
+  assert.equal(op.tramo2.sale, '10:55');
+  assert.equal(op.llega, '11:25');
+  assert.equal(op.tramo1.enVivo, true);
+  assert.equal(op.tramo1.idVehiculo, 'v4');
+  assert.equal(textoDuracion(35), '35 min');
+  assert.equal(textoDuracion(124), '2 h 4 min');
 });
