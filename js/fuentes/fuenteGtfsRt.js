@@ -12,6 +12,7 @@ import { CONFIG } from '../config.js';
 import { pedirFeedGtfsRt, pedirJson } from '../utilidades/red.js';
 import { normalizarFeed, indexarActualizacionesViaje, detectarDesfaseHorario, tiemposDelFeed } from '../modulos/normalizador.js';
 import { Diccionario, enriquecerVehiculo } from '../modulos/diccionario.js';
+import { FuenteHorario } from './fuenteHorario.js';
 
 export class FuenteGtfsRt {
   constructor({ umbrales }) {
@@ -21,6 +22,8 @@ export class FuenteGtfsRt {
     this.errores = new Map();
     /** Diccionarios cargados, por id de fuente */
     this.diccionarios = new Map();
+    /** Operadores sin tiempo real (OUIGO): trenes según horario */
+    this.horario = new FuenteHorario();
   }
 
   async iniciar() {
@@ -28,6 +31,7 @@ export class FuenteGtfsRt {
     if (activas.length === 0) {
       throw new Error('No hay fuentes reales activas en config.js (fuentesReales).');
     }
+    await this.horario.iniciar();
     // Los diccionarios se cargan una vez. Si alguno falla, esa fuente
     // seguirá funcionando pero mostrará códigos en lugar de nombres.
     await Promise.all(
@@ -93,6 +97,9 @@ export class FuenteGtfsRt {
     if (vehiculos.length === 0 && this.errores.size > 0) {
       throw new Error([...this.errores.values()][0]);
     }
+    // Trenes según horario (no dependen de la red tras la primera carga)
+    vehiculos.push(...this.horario.leer());
+    for (const [id, mensaje] of this.horario.errores) this.errores.set(id, mensaje);
     return vehiculos;
   }
 }

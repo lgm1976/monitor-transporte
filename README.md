@@ -6,6 +6,7 @@ Aplicación web estática que muestra en un mapa interactivo la posición y la p
 - **Modo simulado** con trenes que se mueven, para validar la interfaz sin depender de ninguna API
 - **Modo real** con varias fuentes en paralelo, retrasos cruzados desde TripUpdates y soporte protobuf bajo demanda
 - **Filtros por servicio y núcleo**, **seguir un tren** y **enlace para compartirlo**
+- **Trenes OUIGO según horario** (OUIGO no publica datos en tiempo real)
 - Colores y umbrales de retraso definidos en `data/estilo_mapa.json`
 
 ## Estructura
@@ -20,12 +21,14 @@ js/
     estado.js              Clasificación de puntualidad y frases (puro, testeable)
     diccionario.js         Códigos → línea, estación, horario (puro, testeable)
     filtros.js             Servicio/núcleo, clave del tren, URL y resumen (puro, testeable)
+    horario.js             Posición estimada según horario (puro, testeable)
     normalizador.js        GTFS-RT → modelo interno (puro, testeable)
     mapa.js                Leaflet: marcadores, movimiento continuo, fichas, leyenda
     panel.js               Selectores de servicio y núcleo, contadores-filtro, buscador y listado
   fuentes/
     fuenteMock.js          Datos simulados con movimiento
     fuenteGtfsRt.js        Feeds reales (varias fuentes en paralelo)
+    fuenteHorario.js       Trenes según horario (OUIGO), en los dos modos
   utilidades/
     red.js                 fetch con timeout, proxy CORS y protobuf
     geo.js                 Distancia, rumbo e interpolación (puro, testeable)
@@ -35,10 +38,13 @@ data/
   gtfs-realtime.proto      Esquema GTFS-RT (subconjunto) para binarios
   diccionarios/            Estaciones, líneas y viajes (se regeneran cada noche)
     cercanias.json, ld.json, mock.json
+  horarios/                Horarios de operadores sin tiempo real (se regeneran cada noche)
+    ouigo.json
 scripts/
   generar_diccionarios.py  Descarga el GTFS estático de Renfe y crea los diccionarios
+  generar_horarios.py      Descarga el horario de OUIGO y crea data/horarios/ouigo.json
 .github/workflows/
-  diccionarios.yml         Ejecuta el script cada noche y sube los cambios
+  diccionarios.yml         Ejecuta los dos scripts cada noche y sube los cambios
 proxy/
   cloudflare-worker.js     Proxy CORS opcional con lista blanca
 tests/                     Pruebas con `node --test`
@@ -167,6 +173,25 @@ La URL refleja siempre el estado, así que también se pueden guardar vistas en 
 | `nucleo` | `Madrid` | Filtra por núcleo de Cercanías |
 
 En el modo simulado los trenes C4 y R1 tienen núcleo (Madrid y Rodalies de Catalunya) para poder probar el filtro: en `data/diccionarios/mock.json` el grupo de la línea se escribe «Cercanías Madrid».
+
+## Trenes OUIGO según horario
+
+Los feeds en tiempo real son de Renfe y solo traen trenes de Renfe. **OUIGO no publica la posición ni el retraso de sus trenes en ningún feed abierto**; solo su horario (GTFS estático), en el Punto de Acceso Nacional de Transporte Multimodal (nap.transportes.gob.es, con registro). Mobility Database guarda una copia pública, que es la que usa la app.
+
+Con ese horario la app **estima** dónde debería ir cada OUIGO ahora:
+
+- Entre dos estaciones avanza en línea recta a velocidad constante (el horario no trae el trazado de la vía). En una estación se queda parado de la llegada a la salida.
+- Marcador distinto: color de OUIGO, semitransparente y con **borde discontinuo**. En la leyenda: «Según horario (sin datos en vivo)».
+- Estado «Sin datos» y texto «Según horario · sin datos en vivo». La ficha explica que, si lleva retraso, no lo sabemos. No cuentan en el porcentaje de puntualidad.
+- Funcionan como cualquier tren: filtro de servicio «OUIGO», buscador, seguir y enlace (`?tren=6610`).
+- Aparecen también en el modo simulado (`CONFIG.mock.incluirHorarios`), porque no dependen de ninguna API.
+- Algunos OUIGO viajan acoplados en parte del recorrido (p. ej. Sevilla → Barcelona y Madrid → Barcelona desde Madrid): se verán dos marcadores superpuestos.
+
+`scripts/generar_horarios.py` descarga el ZIP (unos 8 KB), guarda los viajes de ayer, hoy y mañana con las coordenadas de cada estación y reaprovecha los nombres de estación de los diccionarios de Renfe (los códigos coinciden con los de Adif). Resultado: `data/horarios/ouigo.json`, unos 10 KB. La Action nocturna lo regenera después de los diccionarios; si la descarga falla, se queda el de la víspera.
+
+**Caducidad.** La copia comprobada el 01/11/2026 tiene horarios **hasta el 12/12/2026**. Si no se publica una nueva, a partir del 13/12 no saldrá ningún OUIGO y la cabecera avisará de que el horario terminó. Solución: descargar el fichero directamente del Punto de Acceso Nacional (registro gratuito y clave en la cabecera HTTP) y añadirlo al script, guardando la clave como secreto de GitHub.
+
+Para añadir otro operador sin tiempo real (Iryo, por ejemplo), basta una entrada más en `OPERADORES` del script y en `CONFIG.fuentesHorario`.
 
 ## CORS: cuándo y cómo usar el proxy
 

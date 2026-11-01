@@ -92,6 +92,8 @@ export const CONFIG = {
     generarSinteticos: true,
     /** Varía ligeramente el retraso entre refrescos */
     variarRetrasos: true,
+    /** Añade los trenes según horario (OUIGO), que no dependen de ninguna API */
+    incluirHorarios: true,
   },
 
   /**
@@ -134,6 +136,21 @@ export const CONFIG = {
       formato: 'auto',
       unidadVelocidad: 'm/s',
       usarProxy: true,
+    },
+  ],
+
+  /**
+   * Operadores sin datos en tiempo real: sus trenes se pintan donde
+   * deberían ir según el horario publicado (sin retraso conocido).
+   * Los horarios los genera scripts/generar_horarios.py cada noche.
+   * Se muestran en los dos modos (real y simulado).
+   */
+  fuentesHorario: [
+    {
+      id: 'ouigo',
+      nombre: 'OUIGO (según horario)',
+      activa: true,
+      ruta: 'data/horarios/ouigo.json',
     },
   ],
 

@@ -31,9 +31,24 @@ export function escaparHtml(texto) {
   return String(texto ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
 
-/** HTML del icono: círculo de color + flecha según rumbo (o aspa si está cancelado) */
+/**
+ * HTML del icono: círculo de color + flecha según rumbo (o aspa si está cancelado).
+ * Los trenes según horario llevan el color del operador y un borde
+ * discontinuo: su posición es estimada, no real.
+ */
 function htmlIcono(vehiculo, color, rumbo = vehiculo.rumbo) {
   let simbolo;
+  if (vehiculo.segunHorario) {
+    const fondo = vehiculo.linea?.color || color;
+    const flecha = rumbo === null || rumbo === undefined
+      ? '<circle cx="12" cy="12" r="3" fill="#fff"/>'
+      : `<path d="M12 6 L16.5 15.5 L12 13.2 L7.5 15.5 Z" fill="#fff" transform="rotate(${Math.round(rumbo)} 12 12)"/>`;
+    return `
+    <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+      <circle cx="12" cy="12" r="10.5" fill="${fondo}" fill-opacity="0.82" stroke="#fff" stroke-width="2" stroke-dasharray="3.2 2.2"/>
+      ${flecha}
+    </svg>`;
+  }
   if (vehiculo.estado === 'cancelled') {
     simbolo = '<path d="M8 8 L16 16 M16 8 L8 16" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>';
   } else if (rumbo === null || rumbo === undefined) {
@@ -73,7 +88,7 @@ function htmlPopup(v, color) {
   const datoViejo = v.timestampMs && Date.now() - v.timestampMs > MINUTOS_DATO_ANTIGUO * 60000;
 
   // Línea de situación: dónde está ahora
-  const situacion = [v.situacion, v.anden ? `andén ${v.anden}` : null, v.llegadaParada ? `prevista ${v.llegadaParada}` : null]
+  const situacion = [v.situacion, v.anden ? `andén ${v.anden}` : null, v.llegadaParada ? `${v.segunHorario ? 'hacia las' : 'prevista'} ${v.llegadaParada}` : null]
     .filter(Boolean)
     .join(' · ');
 
@@ -95,9 +110,11 @@ function htmlPopup(v, color) {
       <ul class="ficha-datos">
         ${v.cancelado ? '' : `<li><span class="etq">Ahora</span>${escaparHtml(situacion)}</li>`}
         ${horario}
-        ${antiguedad ? `<li class="${datoViejo ? 'dato-viejo' : ''}"><span class="etq">Posición</span>${escaparHtml(antiguedad)}${datoViejo ? ' · puede no estar al día' : ''}</li>` : ''}
+        ${v.segunHorario ? '<li class="dato-horario"><span class="etq">Posición</span>Estimada según el horario</li>' : ''}
+        ${antiguedad && !v.segunHorario ? `<li class="${datoViejo ? 'dato-viejo' : ''}"><span class="etq">Posición</span>${escaparHtml(antiguedad)}${datoViejo ? ' · puede no estar al día' : ''}</li>` : ''}
       </ul>
       ${v.sintetico ? '<p class="ficha-aviso">Tren ficticio del modo simulado.</p>' : ''}
+      ${v.segunHorario ? `<p class="ficha-aviso">${escaparHtml(v.servicio)} no publica la posición de sus trenes en tiempo real. Lo situamos donde debería ir según su horario: si lleva retraso, no lo sabemos.</p>` : ''}
       <div class="ficha-acciones">
         <button type="button" data-accion="seguir" data-id="${escaparHtml(v.id)}" class="boton-ficha boton-ficha-principal">Seguir este tren</button>
         <button type="button" data-accion="compartir" data-id="${escaparHtml(v.id)}" class="boton-ficha">Compartir</button>
@@ -186,9 +203,11 @@ export class MapaTransporte {
     const leyenda = L.control({ position: 'bottomright' });
     leyenda.onAdd = () => {
       const div = L.DomUtil.create('div', 'leyenda-mapa');
-      div.innerHTML = ORDEN_ESTADOS.map(
-        (e) => `<span><i style="background:${this.colorDe(e)}"></i>${ETIQUETAS_ESTADO[e]}</span>`
-      ).join('');
+      div.innerHTML =
+        ORDEN_ESTADOS.map((e) => `<span><i style="background:${this.colorDe(e)}"></i>${ETIQUETAS_ESTADO[e]}</span>`).join('') +
+        ((CONFIG.fuentesHorario || []).some((f) => f.activa)
+          ? '<span><i class="leyenda-horario"></i>Según horario (sin datos en vivo)</span>'
+          : '');
       return div;
     };
     leyenda.addTo(this.mapa);

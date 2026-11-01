@@ -184,7 +184,7 @@ export class PanelLateral {
         const detalle = v.cancelado
           ? 'Tren cancelado'
           : [v.situacion, v.anden ? `andén ${v.anden}` : null].filter(Boolean).join(' · ');
-        const corto = v.estado === 'cancelled' ? 'Cancelado' : formatearRetraso(v.retrasoSeg);
+        const corto = v.estado === 'cancelled' ? 'Cancelado' : v.segunHorario ? 'Horario' : formatearRetraso(v.retrasoSeg);
         return `
       <li>
         <button type="button" data-id="${escaparHtml(v.id)}" ${v.id === this.idSeguido ? 'data-seguido="true" aria-current="true"' : ''}

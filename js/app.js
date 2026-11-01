@@ -183,7 +183,7 @@ function pintarSeguimiento() {
       <div class="tarjeta-cuerpo">
         <div class="tarjeta-fila"><span class="tarjeta-sub">Siguiendo el tren ${escaparHtml(app.seguido.clave)}</span>${cerrar}</div>
         <p class="tarjeta-titulo">Buscando el tren…</p>
-        <p class="tarjeta-texto">Ahora no aparece en los datos${app.modo === 'mock' ? ' simulados' : ' de Renfe'}. Puede que aún no haya salido o que ya haya llegado; seguimos mirando en cada actualización.</p>
+        <p class="tarjeta-texto">Ahora no aparece en los datos${app.modo === 'mock' ? ' simulados' : ''}. Puede que aún no haya salido o que ya haya llegado; seguimos mirando en cada actualización.</p>
         <div class="tarjeta-acciones"><button type="button" data-accion="dejar" class="boton-ficha">Dejar de seguir</button></div>
       </div>`;
     el.hidden = false;
@@ -191,7 +191,9 @@ function pintarSeguimiento() {
   }
 
   const color = app.mapa.colorDe(v.estado);
-  const sub = [v.servicio === 'Cercanías' && v.nucleo ? `Cercanías ${v.nucleo}` : v.servicio, v.numeroTren ? `Tren ${v.numeroTren}` : null]
+  // Si la pastilla ya dice el servicio (p. ej. «OUIGO»), no se repite al lado
+  const servicioTexto = v.servicio === 'Cercanías' && v.nucleo ? `Cercanías ${v.nucleo}` : v.servicio;
+  const sub = [servicioTexto === v.linea?.nombre ? null : servicioTexto, v.numeroTren ? `Tren ${v.numeroTren}` : null]
     .filter(Boolean).join(' · ');
   const situacion = v.cancelado ? '' : [v.situacion, v.anden ? `andén ${v.anden}` : null].filter(Boolean).join(' · ');
   let llegada = '';
@@ -200,8 +202,11 @@ function pintarSeguimiento() {
       ? `Llega <strong>${escaparHtml(v.llegadaPrevista)}</strong> <s>${escaparHtml(v.llegadaProg)}</s>`
       : `Llega ${escaparHtml(v.llegadaProg)}`;
   }
-  const antiguedad = describirAntiguedad(v.timestampMs);
-  const pie = [llegada, antiguedad ? `posición ${escaparHtml(antiguedad)}` : ''].filter(Boolean).join(' · ');
+  const antiguedad = v.segunHorario ? null : describirAntiguedad(v.timestampMs);
+  const pie = [
+    llegada,
+    v.segunHorario ? 'posición estimada según horario' : antiguedad ? `posición ${escaparHtml(antiguedad)}` : '',
+  ].filter(Boolean).join(' · ');
 
   el.innerHTML = `
     <div class="tarjeta-cuerpo">

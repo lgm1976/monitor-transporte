@@ -15,6 +15,7 @@ import { CONFIG } from '../config.js';
 import { pedirJson } from '../utilidades/red.js';
 import { normalizarFeed } from '../modulos/normalizador.js';
 import { Diccionario, enriquecerVehiculo } from '../modulos/diccionario.js';
+import { FuenteHorario } from './fuenteHorario.js';
 
 const RADIO_TIERRA_M = 6371000;
 /** Caja aproximada de la España peninsular; si un tren sale, da la vuelta */
@@ -99,6 +100,12 @@ export class FuenteMock {
       this.feed.entity.push(...structuredClone(SINTETICOS));
     }
     this.ultimaLectura = Date.now();
+    // Los trenes según horario (OUIGO) no dependen de ninguna API: se
+    // muestran también aquí para validar su aspecto
+    if (CONFIG.mock.incluirHorarios) {
+      this.horario = new FuenteHorario();
+      await this.horario.iniciar();
+    }
   }
 
   /** Aplica movimiento y variación de retrasos desde la última lectura */
@@ -137,14 +144,21 @@ export class FuenteMock {
     }
   }
 
+  /** Avisos de los horarios (p. ej. caducados), como en la fuente real */
+  get errores() {
+    return this.horario?.errores;
+  }
+
   /** Devuelve la lista de vehículos normalizados */
   async leer() {
     await this.iniciar();
     this._simularPaso();
-    return normalizarFeed(this.feed, {
+    const vehiculos = normalizarFeed(this.feed, {
       unidadVelocidad: CONFIG.mock.unidadVelocidad,
       umbrales: this.umbrales,
       fuente: this.nombre,
     }).map((v) => enriquecerVehiculo(v, this.diccionario));
+    if (this.horario) vehiculos.push(...this.horario.leer());
+    return vehiculos;
   }
 }

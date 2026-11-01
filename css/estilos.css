@@ -201,3 +201,10 @@ body[data-siguiendo='true'] .leyenda-mapa { display: none; }
   box-shadow: 0 6px 20px rgb(15 23 42 / 0.3);
 }
 .toast-enlace { margin-top: 6px; width: 100%; border-radius: 0.4rem; padding: 4px 6px; color: #0f172a; font-size: 12px; }
+
+/* ---------- Trenes según horario (sin datos en vivo) ---------- */
+.leyenda-mapa i.leyenda-horario {
+  background: #e5007d; opacity: 0.85;
+  outline: 1.5px dashed #e5007d; outline-offset: 1.5px;
+}
+.ficha-datos .dato-horario { color: #9d174d; }
