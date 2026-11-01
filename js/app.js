@@ -124,6 +124,7 @@ async function establecerModo(modo) {
   history.replaceState(null, '', url);
 
   app.vehiculos = [];
+  renderizar(); // limpia mapa y listado antes de la primera lectura del nuevo modo
   app.fallosSeguidos = 0;
   app.mapa.ajustadoInicial = false;
   mostrarAviso('');

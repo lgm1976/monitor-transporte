@@ -75,16 +75,13 @@ export const CONFIG = {
    * necesitan proxy. No traen rumbo ni velocidad: los marcadores se
    * pintan como punto en vez de flecha.
    */
-
-  /**
-   * Feeds reales de Renfe
-   */
   fuentesReales: [
     {
       id: 'renfe-cercanias',
       nombre: 'Renfe Cercanías',
       activa: true,
-      url: 'https://gtfsrt.renfe.com/cercanias.json',
+      posiciones: 'https://gtfsrt.renfe.com/vehicle_positions.json',
+      actualizacionesViaje: 'https://gtfsrt.renfe.com/trip_updates.json',
       formato: 'auto',
       unidadVelocidad: 'm/s',
       usarProxy: true,
@@ -93,7 +90,8 @@ export const CONFIG = {
       id: 'renfe-ld',
       nombre: 'Renfe AV / LD / MD',
       activa: true,
-      url: 'https://gtfsrt.renfe.com/av_ld_md.json',
+      posiciones: 'https://gtfsrt.renfe.com/vehicle_positions_LD.json',
+      actualizacionesViaje: 'https://gtfsrt.renfe.com/trip_updates_LD.json',
       formato: 'auto',
       unidadVelocidad: 'm/s',
       usarProxy: true,
