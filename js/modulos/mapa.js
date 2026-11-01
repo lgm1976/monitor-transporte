@@ -10,9 +10,14 @@
 
 import { CONFIG } from '../config.js';
 import { ETIQUETAS_ESTADO, ORDEN_ESTADOS, describirAntiguedad } from './estado.js';
+import { distanciaKm, calcularRumbo, diferenciaAngular, posicionEnTramo } from '../utilidades/geo.js';
 
-/** Duración de la interpolación entre dos posiciones (ms) */
-const DURACION_ANIMACION_MS = 900;
+/** Duración del salto en modo de animación 'rapida' (ms) */
+const DURACION_SALTO_RAPIDO_MS = 900;
+/** Distancia mínima (km) para fiarse del rumbo calculado a partir del movimiento */
+const DISTANCIA_MIN_RUMBO_KM = 0.05;
+/** Cambio mínimo de rumbo (grados) para volver a dibujar la flecha */
+const CAMBIO_MIN_RUMBO = 12;
 /** A partir de cuántos minutos una posición se marca como posiblemente desfasada */
 const MINUTOS_DATO_ANTIGUO = 10;
 
@@ -22,14 +27,14 @@ export function escaparHtml(texto) {
 }
 
 /** HTML del icono: círculo de color + flecha según rumbo (o aspa si está cancelado) */
-function htmlIcono(vehiculo, color) {
+function htmlIcono(vehiculo, color, rumbo = vehiculo.rumbo) {
   let simbolo;
   if (vehiculo.estado === 'cancelled') {
     simbolo = '<path d="M8 8 L16 16 M16 8 L8 16" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>';
-  } else if (vehiculo.rumbo === null) {
+  } else if (rumbo === null || rumbo === undefined) {
     simbolo = '<circle cx="12" cy="12" r="3.2" fill="#fff"/>';
   } else {
-    simbolo = `<path d="M12 5 L17 16 L12 13.4 L7 16 Z" fill="#fff" transform="rotate(${vehiculo.rumbo} 12 12)"/>`;
+    simbolo = `<path d="M12 5 L17 16 L12 13.4 L7 16 Z" fill="#fff" transform="rotate(${Math.round(rumbo)} 12 12)"/>`;
   }
   return `
     <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
@@ -112,8 +117,16 @@ export class MapaTransporte {
    */
   constructor(idContenedor, { colores }) {
     this.colores = { ...colores, unknown: CONFIG.colorSinDatos };
-    this.marcadores = new Map(); // id → {marcador, vehiculo, animacion}
+    /** id → {marcador, vehiculo, tramo, ultimoCambioMs, rumboPintado, rumboEstimado} */
+    this.marcadores = new Map();
+    /** ids de marcadores con un deslizamiento en curso */
+    this.enMovimiento = new Set();
     this.ajustadoInicial = false;
+    this.enZoom = false;
+    this.ultimoFotograma = 0;
+    this.idBucle = null;
+    /** Duración del primer deslizamiento de cada tren (se ajusta por modo) */
+    this.duracionInicialSeg = CONFIG.animacion.duracionInicialSeg;
 
     const c = CONFIG.mapa;
     this.mapa = L.map(idContenedor, {
@@ -133,6 +146,13 @@ export class MapaTransporte {
       className: 'teselas-base',
     }).addTo(this.mapa);
     this._crearLeyenda();
+
+    // Durante el zoom animado Leaflet recoloca los marcadores: no se mueven
+    this.mapa.on('zoomstart', () => (this.enZoom = true));
+    this.mapa.on('zoomend', () => {
+      this.enZoom = false;
+      this._pintarFotograma(performance.now(), true);
+    });
   }
 
   colorDe(estado) {
@@ -151,30 +171,121 @@ export class MapaTransporte {
     leyenda.addTo(this.mapa);
   }
 
-  _icono(vehiculo) {
+  _icono(vehiculo, rumbo) {
     return L.divIcon({
       className: 'marcador-tren',
-      html: htmlIcono(vehiculo, this.colorDe(vehiculo.estado)),
+      html: htmlIcono(vehiculo, this.colorDe(vehiculo.estado), rumbo),
       iconSize: [28, 28],
       iconAnchor: [14, 14],
       popupAnchor: [0, -14],
     });
   }
 
-  /** Interpola la posición del marcador para que el tren "se deslice" */
-  _animar(registro, destino) {
-    if (registro.animacion) cancelAnimationFrame(registro.animacion);
-    const origen = registro.marcador.getLatLng();
-    const inicio = performance.now();
-    const paso = (t) => {
-      const k = Math.min(1, (t - inicio) / DURACION_ANIMACION_MS);
-      registro.marcador.setLatLng([
-        origen.lat + (destino[0] - origen.lat) * k,
-        origen.lng + (destino[1] - origen.lng) * k,
-      ]);
-      registro.animacion = k < 1 ? requestAnimationFrame(paso) : null;
+  /* ---------- Movimiento continuo ---------- */
+
+  /** Rumbo que se dibuja: el del feed o, si no viene, el estimado por el movimiento */
+  _rumboVisible(registro) {
+    const v = registro.vehiculo;
+    if (v.rumbo !== null && v.rumbo !== undefined) return v.rumbo;
+    if (!CONFIG.animacion.rumboEstimado || v.estado === 'cancelled') return null;
+    return registro.rumboEstimado ?? null;
+  }
+
+  /** Vuelve a dibujar el icono solo si cambia el estado o la flecha gira lo bastante */
+  _actualizarIcono(registro, forzar = false) {
+    const rumbo = this._rumboVisible(registro);
+    const giro =
+      rumbo === null || registro.rumboPintado === null
+        ? rumbo !== registro.rumboPintado
+        : diferenciaAngular(rumbo, registro.rumboPintado) >= CAMBIO_MIN_RUMBO;
+    if (forzar || giro) {
+      registro.marcador.setIcon(this._icono(registro.vehiculo, rumbo));
+      registro.rumboPintado = rumbo;
+    }
+  }
+
+  /**
+   * Programa el deslizamiento de un marcador hacia su nueva posición.
+   * Arranca desde donde está pintado ahora mismo (aunque estuviera a mitad
+   * de otro tramo) y dura lo que el feed tarda en mover ese tren, así
+   * llega justo cuando llega el siguiente dato y no se queda parado.
+   */
+  _moverA(registro, lat, lon) {
+    const cfg = CONFIG.animacion;
+    const ahora = performance.now();
+    const actual = registro.tramo ? posicionEnTramo(registro.tramo, ahora) : registro.marcador.getLatLng();
+    const desde = [actual.lat, actual.lon ?? actual.lng];
+    const salto = distanciaKm(desde[0], desde[1], lat, lon);
+
+    // Ritmo real de actualización de este tren (tiempo desde su último movimiento)
+    const intervaloMs = registro.ultimoCambioMs ? ahora - registro.ultimoCambioMs : this.duracionInicialSeg * 1000;
+    registro.ultimoCambioMs = ahora;
+
+    // Rumbo estimado a partir del desplazamiento real (no del pintado)
+    const previo = registro.ultimaPosicionReal;
+    if (previo && distanciaKm(previo[0], previo[1], lat, lon) >= DISTANCIA_MIN_RUMBO_KM) {
+      registro.rumboEstimado = calcularRumbo(previo[0], previo[1], lat, lon);
+    }
+    registro.ultimaPosicionReal = [lat, lon];
+
+    if (salto > cfg.saltoMaximoKm || document.hidden) {
+      // Salto inverosímil o pestaña oculta: se coloca directamente
+      registro.tramo = null;
+      this.enMovimiento.delete(registro.vehiculo.id);
+      registro.marcador.setLatLng([lat, lon]);
+      return;
+    }
+
+    const duracionMs =
+      cfg.modo === 'rapida'
+        ? DURACION_SALTO_RAPIDO_MS
+        : Math.min(cfg.duracionMaxSeg * 1000, Math.max(cfg.duracionMinSeg * 1000, intervaloMs));
+    registro.tramo = { desde, hasta: [lat, lon], inicioMs: ahora, duracionMs };
+    this.enMovimiento.add(registro.vehiculo.id);
+    this._arrancarBucle();
+  }
+
+  /** Un único bucle para todos los marcadores, limitado a CONFIG.animacion.fps */
+  _arrancarBucle() {
+    if (this.idBucle !== null) return;
+    const intervaloFotograma = 1000 / CONFIG.animacion.fps;
+    const bucle = (t) => {
+      if (this.enMovimiento.size === 0) {
+        this.idBucle = null;
+        return;
+      }
+      if (t - this.ultimoFotograma >= intervaloFotograma) {
+        this.ultimoFotograma = t;
+        this._pintarFotograma(t);
+      }
+      this.idBucle = requestAnimationFrame(bucle);
     };
-    registro.animacion = requestAnimationFrame(paso);
+    this.idBucle = requestAnimationFrame(bucle);
+  }
+
+  /**
+   * Coloca los marcadores en movimiento en su posición para el instante t.
+   * Solo se tocan los que están a la vista (con margen); los demás siguen su
+   * tramo "en el reloj" y se colocan al entrar en pantalla o al terminar.
+   */
+  _pintarFotograma(t, todos = false) {
+    if (this.enZoom) return;
+    const visibles = this.mapa.getBounds().pad(0.25);
+    for (const id of this.enMovimiento) {
+      const registro = this.marcadores.get(id);
+      if (!registro?.tramo) {
+        this.enMovimiento.delete(id);
+        continue;
+      }
+      const p = posicionEnTramo(registro.tramo, t);
+      if (todos || p.terminado || visibles.contains([p.lat, p.lon])) {
+        registro.marcador.setLatLng([p.lat, p.lon]);
+      }
+      if (p.terminado) {
+        registro.tramo = null;
+        this.enMovimiento.delete(id);
+      }
+    }
   }
 
   /**
@@ -196,22 +307,24 @@ export class MapaTransporte {
           riseOnHover: true,
         }).bindPopup(htmlPopup(v, color), { maxWidth: 300, minWidth: 240 });
         marcador.addTo(this.mapa);
-        this.marcadores.set(v.id, { marcador, vehiculo: v, animacion: null });
+        this.marcadores.set(v.id, {
+          marcador, vehiculo: v, tramo: null, ultimoCambioMs: null,
+          ultimaPosicionReal: [v.lat, v.lon], rumboEstimado: null, rumboPintado: v.rumbo ?? null,
+        });
         continue;
       }
 
       const anterior = registro.vehiculo;
       registro.vehiculo = v;
-      if (anterior.estado !== v.estado || anterior.rumbo !== v.rumbo) {
-        registro.marcador.setIcon(this._icono(v));
-      }
       registro.marcador.setPopupContent(htmlPopup(v, color));
-      if (anterior.lat !== v.lat || anterior.lon !== v.lon) this._animar(registro, [v.lat, v.lon]);
+      // La posición solo cambia cuando el feed trae un dato nuevo para ese tren
+      if (anterior.lat !== v.lat || anterior.lon !== v.lon) this._moverA(registro, v.lat, v.lon);
+      this._actualizarIcono(registro, anterior.estado !== v.estado);
     }
 
     for (const [id, registro] of this.marcadores) {
       if (!vistos.has(id)) {
-        if (registro.animacion) cancelAnimationFrame(registro.animacion);
+        this.enMovimiento.delete(id);
         registro.marcador.remove();
         this.marcadores.delete(id);
       }
@@ -234,8 +347,17 @@ export class MapaTransporte {
   enfocar(id) {
     const registro = this.marcadores.get(id);
     if (!registro) return;
-    this.mapa.flyTo(registro.marcador.getLatLng(), Math.max(this.mapa.getZoom(), 10), { duration: 0.8 });
+    const destino = registro.tramo ? registro.tramo.hasta : registro.marcador.getLatLng();
+    this.mapa.flyTo(destino, Math.max(this.mapa.getZoom(), 10), { duration: 0.8 });
     this.mapa.once('moveend', () => registro.marcador.openPopup());
+  }
+
+  /**
+   * Ritmo esperado de los datos al cambiar de modo: en simulado los trenes
+   * se mueven en cada lectura; en real, cuando el operador renueva el feed.
+   */
+  fijarDuracionInicial(segundos) {
+    this.duracionInicialSeg = segundos;
   }
 
   /** Recalcula tamaño (p. ej. al plegar el panel lateral) */

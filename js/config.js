@@ -13,8 +13,36 @@ export const CONFIG = {
   /** Modo por defecto si la URL no indica ?modo= */
   modoPorDefecto: 'mock',
 
-  /** Segundos entre actualizaciones del mapa */
+  /**
+   * Segundos entre lecturas de los feeds. Renfe renueva las posiciones
+   * cada 15-20 s (medido el 01/11/2026) y el Worker las cachea 15 s, así
+   * que leer más a menudo no trae datos nuevos: la sensación de
+   * movimiento continuo la da la animación (ver `animacion`).
+   */
   intervaloRefrescoSeg: 10,
+
+  /**
+   * Movimiento continuo de los marcadores entre dos lecturas.
+   * Cada tren se desliza desde donde está pintado hasta su nueva posición
+   * durante el tiempo que el feed tarda en volver a moverlo, de modo que
+   * llega justo cuando aparece el siguiente dato. Se ve fluido a cambio
+   * de mostrar la posición con el retraso de una actualización (15-20 s).
+   */
+  animacion: {
+    /** 'continua' (deslizamiento) | 'rapida' (salto corto de 1 s) */
+    modo: 'continua',
+    /** Duración del deslizamiento cuando aún no se conoce el ritmo del feed */
+    duracionInicialSeg: 18,
+    /** Límites del deslizamiento, para no arrastrar datos muy viejos */
+    duracionMinSeg: 5,
+    duracionMaxSeg: 40,
+    /** Saltos mayores se pintan directamente (datos erróneos o reaparición) */
+    saltoMaximoKm: 25,
+    /** Fotogramas por segundo del bucle de animación (ahorra batería) */
+    fps: 30,
+    /** Orienta la flecha según el movimiento cuando el feed no trae rumbo */
+    rumboEstimado: true,
+  },
 
   /** Tiempo máximo de espera de cada petición HTTP (ms) */
   timeoutPeticionMs: 15000,

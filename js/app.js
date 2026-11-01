@@ -127,6 +127,9 @@ async function establecerModo(modo) {
   renderizar(); // limpia mapa y listado antes de la primera lectura del nuevo modo
   app.fallosSeguidos = 0;
   app.mapa.ajustadoInicial = false;
+  app.mapa.fijarDuracionInicial(
+    app.modo === 'mock' ? CONFIG.intervaloRefrescoSeg : CONFIG.animacion.duracionInicialSeg
+  );
   mostrarAviso('');
   pintarModo();
 

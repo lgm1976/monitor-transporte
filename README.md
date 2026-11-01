@@ -19,13 +19,14 @@ js/
     estado.js              Clasificación de puntualidad y frases (puro, testeable)
     diccionario.js         Códigos → línea, estación, horario (puro, testeable)
     normalizador.js        GTFS-RT → modelo interno (puro, testeable)
-    mapa.js                Leaflet: marcadores, animación, popups, leyenda
+    mapa.js                Leaflet: marcadores, movimiento continuo, fichas, leyenda
     panel.js               Contadores-filtro, buscador y listado
   fuentes/
     fuenteMock.js          Datos simulados con movimiento
     fuenteGtfsRt.js        Feeds reales (varias fuentes en paralelo)
   utilidades/
     red.js                 fetch con timeout, proxy CORS y protobuf
+    geo.js                 Distancia, rumbo e interpolación (puro, testeable)
 data/
   estilo_mapa.json         Colores del tema y umbrales de retraso
   mock_gtfs_rt.json        Feed de ejemplo para el modo simulado
@@ -109,6 +110,17 @@ Configura las fuentes en `CONFIG.fuentesReales`:
 - Si una fuente falla, las demás siguen pintándose y se muestra un aviso con el detalle.
 - Ante fallos repetidos, el intervalo de refresco se alarga (hasta ×6) y vuelve a la normalidad al recuperarse.
 - Con la pestaña en segundo plano no se hacen peticiones.
+
+## Movimiento continuo de los trenes
+
+Leer los feeds más a menudo no hace el mapa más fluido: Renfe renueva las posiciones cada **15-20 segundos** (medido el 01/11/2026: Cercanías ~20 s, AV/LD/MD ~16 s, con unos 50-80 trenes movidos en cada renovación) y el Worker cachea 15 s. Por eso la app lee cada 10 s, lo justo para no perder ninguna renovación, y la fluidez la pone la animación:
+
+- Cuando llega una posición nueva, el tren **se desliza** desde donde está pintado hasta ella durante el tiempo que el feed tarda en moverlo (medido tren a tren), así llega justo cuando aparece el siguiente dato y no se queda quieto entre lecturas. Contrapartida: se ve con el retraso de una renovación (15-20 s, unos 600 m a 120 km/h).
+- Los trenes parados no se mueven; los saltos de más de 25 km (datos erróneos o un tren que reaparece) se pintan directamente.
+- Como Renfe no publica el rumbo, la flecha se **orienta según el desplazamiento** real entre dos posiciones.
+- Un único bucle a 30 fotogramas por segundo mueve solo los trenes visibles; con ~470 trenes consume en torno a un 4 % de CPU. Se detiene durante el zoom y con la pestaña oculta.
+
+Se ajusta en `CONFIG.animacion` (`modo: 'rapida'` vuelve al salto corto de antes).
 
 ## De códigos a información legible
 
