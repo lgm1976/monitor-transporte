@@ -1,0 +1,96 @@
+// Subconjunto de la especificación oficial GTFS Realtime v2.0
+// https://gtfs.org/realtime/reference/
+// Solo incluye los mensajes que usa la aplicación. Los campos no
+// declarados aquí se ignoran al decodificar, así que es seguro.
+// Todos se declaran optional para no fallar con feeds incompletos.
+
+syntax = "proto2";
+package transit_realtime;
+
+message FeedMessage {
+  optional FeedHeader header = 1;
+  repeated FeedEntity entity = 2;
+}
+
+message FeedHeader {
+  optional string gtfs_realtime_version = 1;
+  enum Incrementality {
+    FULL_DATASET = 0;
+    DIFFERENTIAL = 1;
+  }
+  optional Incrementality incrementality = 2;
+  optional uint64 timestamp = 3;
+}
+
+message FeedEntity {
+  optional string id = 1;
+  optional bool is_deleted = 2;
+  optional TripUpdate trip_update = 3;
+  optional VehiclePosition vehicle = 4;
+}
+
+message TripUpdate {
+  optional TripDescriptor trip = 1;
+  message StopTimeEvent {
+    optional int32 delay = 1;
+    optional int64 time = 2;
+    optional int32 uncertainty = 3;
+  }
+  message StopTimeUpdate {
+    optional uint32 stop_sequence = 1;
+    optional StopTimeEvent arrival = 2;
+    optional StopTimeEvent departure = 3;
+    optional string stop_id = 4;
+  }
+  repeated StopTimeUpdate stop_time_update = 2;
+  optional VehicleDescriptor vehicle = 3;
+  optional uint64 timestamp = 4;
+  optional int32 delay = 5;
+}
+
+message VehiclePosition {
+  optional TripDescriptor trip = 1;
+  optional Position position = 2;
+  optional uint32 current_stop_sequence = 3;
+  enum VehicleStopStatus {
+    INCOMING_AT = 0;
+    STOPPED_AT = 1;
+    IN_TRANSIT_TO = 2;
+  }
+  optional VehicleStopStatus current_status = 4;
+  optional uint64 timestamp = 5;
+  optional string stop_id = 7;
+  optional VehicleDescriptor vehicle = 8;
+}
+
+message Position {
+  optional float latitude = 1;
+  optional float longitude = 2;
+  optional float bearing = 3;
+  optional double odometer = 4;
+  optional float speed = 5;
+}
+
+message TripDescriptor {
+  optional string trip_id = 1;
+  optional string start_time = 2;
+  optional string start_date = 3;
+  enum ScheduleRelationship {
+    SCHEDULED = 0;
+    ADDED = 1;
+    UNSCHEDULED = 2;
+    CANCELED = 3;
+    REPLACEMENT = 5;
+    DUPLICATED = 6;
+    DELETED = 7;
+  }
+  optional ScheduleRelationship schedule_relationship = 4;
+  optional string route_id = 5;
+  optional uint32 direction_id = 6;
+}
+
+message VehicleDescriptor {
+  optional string id = 1;
+  optional string label = 2;
+  optional string license_plate = 3;
+}

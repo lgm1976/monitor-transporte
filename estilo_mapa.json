@@ -1,0 +1,17 @@
+{
+  "theme": {
+    "primary": "#0f172a",
+    "accent": "#2563eb",
+    "background": "#f8fafc"
+  },
+  "status_colors": {
+    "on_time": "#16a34a",
+    "slight_delay": "#eab308",
+    "severe_delay": "#dc2626",
+    "cancelled": "#6b7280"
+  },
+  "delay_thresholds_minutes": {
+    "slight": 5,
+    "severe": 15
+  }
+}

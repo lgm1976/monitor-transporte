@@ -1,0 +1,56 @@
+{
+  "header": {
+    "gtfs_realtime_version": "2.0",
+    "timestamp": 1700000000
+  },
+  "entity": [
+    {
+      "id": "TREN-AVE-3092",
+      "vehicle": {
+        "trip": {
+          "trip_id": "AVE-3092",
+          "route_id": "MAD-BAR",
+          "start_time": "10:30:00"
+        },
+        "position": {
+          "latitude": 40.4068,
+          "longitude": -3.6896,
+          "bearing": 85.0,
+          "speed": 280.5
+        },
+        "current_stop_sequence": 1,
+        "current_status": "IN_TRANSIT_TO",
+        "timestamp": 1700000030,
+        "vehicle": {
+          "id": "AVE-102",
+          "label": "AVE Madrid Puerta de Atocha - Barcelona Sants"
+        }
+      },
+      "delay_seconds": 0
+    },
+    {
+      "id": "TREN-ALVIA-04183",
+      "vehicle": {
+        "trip": {
+          "trip_id": "ALVIA-04183",
+          "route_id": "MAD-Gijon",
+          "start_time": "11:15:00"
+        },
+        "position": {
+          "latitude": 41.6523,
+          "longitude": -4.7245,
+          "bearing": 340.0,
+          "speed": 160.0
+        },
+        "current_stop_sequence": 3,
+        "current_status": "IN_TRANSIT_TO",
+        "timestamp": 1700000030,
+        "vehicle": {
+          "id": "ALVIA-130",
+          "label": "Alvia Madrid - Gijón"
+        }
+      },
+      "delay_seconds": 720
+    }
+  ]
+}
