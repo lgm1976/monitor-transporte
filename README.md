@@ -7,6 +7,7 @@ Aplicación web estática que muestra en un mapa interactivo la posición y la p
 - **Modo real** con varias fuentes en paralelo, retrasos cruzados desde TripUpdates y soporte protobuf bajo demanda
 - **Filtros por servicio y núcleo**, **seguir un tren** y **enlace para compartirlo**
 - **Trenes OUIGO según horario** (OUIGO no publica datos en tiempo real)
+- **Próximo tren** entre dos estaciones de Cercanías, con cuenta atrás y retraso en vivo
 - Colores y umbrales de retraso definidos en `data/estilo_mapa.json`
 
 ## Estructura
@@ -22,6 +23,8 @@ js/
     diccionario.js         Códigos → línea, estación, horario (puro, testeable)
     filtros.js             Servicio/núcleo, clave del tren, URL y resumen (puro, testeable)
     horario.js             Posición estimada según horario (puro, testeable)
+    trayectos.js           Próximos trenes de una estación a otra (puro, testeable)
+    panelTrayecto.js       Pestaña «Próximo tren» del panel
     normalizador.js        GTFS-RT → modelo interno (puro, testeable)
     mapa.js                Leaflet: marcadores, movimiento continuo, fichas, leyenda
     panel.js               Selectores de servicio y núcleo, contadores-filtro, buscador y listado
@@ -38,10 +41,13 @@ data/
   gtfs-realtime.proto      Esquema GTFS-RT (subconjunto) para binarios
   diccionarios/            Estaciones, líneas y viajes (se regeneran cada noche)
     cercanias.json, ld.json, mock.json
-  horarios/                Horarios de operadores sin tiempo real (se regeneran cada noche)
-    ouigo.json
+  horarios/                Horarios (se regeneran cada noche)
+    ouigo.json             OUIGO, para pintarlo según horario
+    cercanias/             Todas las paradas de cada tren, un archivo por núcleo
+      indice.json, madrid.json, rodalies-de-catalunya.json…
 scripts/
   generar_diccionarios.py  Descarga el GTFS estático de Renfe y crea los diccionarios
+                           y los horarios completos de Cercanías por núcleo
   generar_horarios.py      Descarga el horario de OUIGO y crea data/horarios/ouigo.json
 .github/workflows/
   diccionarios.yml         Ejecuta los dos scripts cada noche y sube los cambios
@@ -174,6 +180,29 @@ La URL refleja siempre el estado, así que también se pueden guardar vistas en 
 
 En el modo simulado los trenes C4 y R1 tienen núcleo (Madrid y Rodalies de Catalunya) para poder probar el filtro: en `data/diccionarios/mock.json` el grupo de la línea se escribe «Cercanías Madrid».
 
+## Próximo tren entre dos estaciones
+
+Pestaña **«Próximo tren»** del panel lateral. Eliges el núcleo de Cercanías, la estación donde vas a subir y a la que quieres llegar (con autocompletado, sin importar tildes ni mayúsculas; el botón ⇅ las intercambia), y la app muestra:
+
+- **Qué líneas hacen ese trayecto** sin transbordo (p. ej. Nuevos Ministerios → Entrevías: C2 y C7).
+- Los **próximos seis trenes**, ordenados por salida: cuánto falta («en 4 min»), hora de salida, hora de llegada, duración y hacia dónde va el tren (útil en el andén).
+- **Retraso en vivo** de los trenes que ya circulan: la hora programada aparece tachada junto a la prevista, y la etiqueta dice «En vivo · 12 min tarde». Los que aún no han salido de cabecera se muestran «Según horario». Los cancelados se ven tachados.
+- **Ver en el mapa**: sigue ese tren (misma tarjeta y enlace que «Seguir este tren»).
+- Si ningún tren hace el trayecto directo, lo dice: hará falta un transbordo.
+
+Cómo se calcula (`js/modulos/trayectos.js`):
+
+- Se buscan los viajes del horario que paran en el origen y, después, en el destino.
+- A los que circulan se les suma el retraso actual (se cruzan con el feed en vivo por `trip_id`). Si el tren ya ha dejado atrás el origen, se descarta aunque vaya con retraso.
+- Se supone que el retraso se mantiene hasta el origen; en la realidad puede recuperar o perder algún minuto.
+- La cuenta atrás se refresca con cada lectura del feed y, como mínimo, cada 20 s.
+
+Los horarios salen del GTFS de Renfe, con **todas las paradas** de cada tren de hoy, mañana y los de ayer que cruzan la medianoche, en un archivo por núcleo (Madrid: 126 KB, unos 18 KB comprimidos). La web solo descarga el núcleo que eliges y lo genera la misma Action nocturna que los diccionarios. Funciona también en modo simulado, porque no depende de ninguna API.
+
+El trayecto queda en la URL, así que se puede guardar en favoritos o en la pantalla de inicio del móvil: `?red=madrid&desde=18002&hasta=70002`. Además, el navegador recuerda el último trayecto.
+
+Límites: solo trenes directos dentro de un mismo núcleo de Cercanías (sin transbordos ni otros operadores).
+
 ## Trenes OUIGO según horario
 
 Los feeds en tiempo real son de Renfe y solo traen trenes de Renfe. **OUIGO no publica la posición ni el retraso de sus trenes en ningún feed abierto**; solo su horario (GTFS estático), en el Punto de Acceso Nacional de Transporte Multimodal (nap.transportes.gob.es, con registro). Mobility Database guarda una copia pública, que es la que usa la app.
@@ -232,6 +261,7 @@ Usa las teselas estándar de OpenStreetMap, que no piden clave pero están pensa
 - Agrupar marcadores (Leaflet.markercluster) al ver toda España con los dos feeds de Renfe.
 - Arrancar centrado en la zona del usuario (con permiso de ubicación).
 - Panel de estación con próximas llegadas y favoritos («mi C-4 de cada mañana»).
+- Próximo tren con transbordo (una conexión) y también para Media Distancia.
 - Trazado de las líneas (shapes.txt de Cercanías).
 - Capa de avisos de servicio (`Alert` de GTFS-RT).
 - Filtro por operador cuando haya fuentes de otros operadores.

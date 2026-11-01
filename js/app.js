@@ -10,6 +10,7 @@
  *
  * Parámetros de URL admitidos (se pueden combinar):
  *   ?modo=real|mock  ?tren=15868  ?servicio=AVE  ?nucleo=Madrid
+ *   ?red=madrid&desde=18002&hasta=70002   (abre la pestaña «Próximo tren»)
  */
 
 import { CONFIG } from './config.js';
@@ -18,6 +19,7 @@ import { MapaTransporte, escaparHtml, htmlPildora } from './modulos/mapa.js';
 import { ETIQUETAS_ESTADO, describirAntiguedad } from './modulos/estado.js';
 import { claveTren, buscarTren, leerEstadoUrl, escribirEstadoUrl, enlaceTren } from './modulos/filtros.js';
 import { PanelLateral } from './modulos/panel.js';
+import { PanelTrayecto } from './modulos/panelTrayecto.js';
 import { FuenteMock } from './fuentes/fuenteMock.js';
 import { FuenteGtfsRt } from './fuentes/fuenteGtfsRt.js';
 
@@ -40,6 +42,9 @@ const app = {
    */
   seguido: null,
   temporizadorToast: null,
+  /** Pestaña del panel: 'trenes' | 'trayecto' */
+  vista: 'trenes',
+  trayecto: null,
 };
 
 /* ---------- Utilidades de interfaz ---------- */
@@ -92,11 +97,15 @@ function mostrarToast(html, ms = 2600) {
 
 /** Refleja en la URL el modo, el tren seguido y los filtros (sin recargar) */
 function sincronizarUrl() {
+  const trayecto = app.vista === 'trayecto' && app.trayecto ? app.trayecto.valor : {};
   const href = escribirEstadoUrl(location.href, {
     modo: app.modo,
     tren: app.seguido?.clave ?? '',
     servicio: app.panel?.ambito.servicio ?? '',
     nucleo: app.panel?.ambito.nucleo ?? '',
+    red: trayecto.red ?? '',
+    desde: trayecto.desde ?? '',
+    hasta: trayecto.hasta ?? '',
   });
   history.replaceState(null, '', href);
 }
@@ -242,7 +251,21 @@ function renderizar() {
 
   app.mapa.actualizar(visibles);
   app.panel.actualizar(app.vehiculos, visibles);
+  app.trayecto?.actualizar(app.vehiculos);
   pintarSeguimiento();
+}
+
+/** Cambia de pestaña en el panel lateral */
+function cambiarVista(vista) {
+  app.vista = vista === 'trayecto' ? 'trayecto' : 'trenes';
+  for (const b of document.querySelectorAll('.pestanas [data-vista]')) {
+    b.setAttribute('aria-selected', String(b.dataset.vista === app.vista));
+  }
+  $('vista-trenes').hidden = app.vista !== 'trenes';
+  $('vista-trayecto').hidden = app.vista !== 'trayecto';
+  if (app.vista === 'trayecto') app.trayecto.activar(app.panel.ambito.nucleo);
+  else app.trayecto.desactivar();
+  sincronizarUrl();
 }
 
 /** Lee la fuente actual una vez */
@@ -372,6 +395,12 @@ function conectarControles() {
   // Al arrastrar el mapa se deja de centrar en el tren (se ofrece «Centrar»)
   app.mapa.alSoltarSeguimiento = soltarCentrado;
 
+  // Pestañas del panel
+  document.querySelector('.pestanas').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-vista]');
+    if (b) cambiarVista(b.dataset.vista);
+  });
+
   // Escape deja de seguir
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && app.seguido && !document.querySelector('.leaflet-popup')) dejarDeSeguir();
@@ -418,6 +447,12 @@ async function iniciar() {
     },
     ambito: { servicio: estadoUrl.servicio, nucleo: estadoUrl.nucleo },
   });
+  app.trayecto = new PanelTrayecto({
+    // «Ver en el mapa» sigue el tren (en el móvil pliega el panel)
+    alVerEnMapa: (id) => seguirTren(id),
+    alCambiar: sincronizarUrl,
+    inicial: { red: estadoUrl.red, desde: estadoUrl.desde, hasta: estadoUrl.hasta },
+  });
 
   const u = app.estilos.delay_thresholds_minutes;
   $('texto-umbrales').textContent = `Leve ≥ ${u.slight} min · Grave ≥ ${u.severe} min`;
@@ -429,6 +464,11 @@ async function iniciar() {
   if (window.matchMedia('(max-width: 767px)').matches) {
     document.body.dataset.panel = 'cerrado';
     $('btn-panel').setAttribute('aria-expanded', 'false');
+  }
+  // Un enlace con trayecto abre directamente la pestaña «Próximo tren»
+  if (estadoUrl.desde || estadoUrl.hasta || estadoUrl.red) {
+    cambiarVista('trayecto');
+    plegarPanel(false);
   }
   await establecerModo(estadoUrl.modo || CONFIG.modoPorDefecto, { esArranque: true });
 }

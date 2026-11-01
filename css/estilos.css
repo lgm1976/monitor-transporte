@@ -13,6 +13,8 @@
 }
 
 html, body { height: 100%; }
+/* Que el atributo hidden gane siempre a las clases de Tailwind (flex, grid…) */
+[hidden] { display: none !important; }
 body {
   background: var(--color-fondo);
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -63,7 +65,8 @@ body[data-cargando='true'] #btn-refrescar { opacity: 0.6; pointer-events: none; 
 /* ---------- Panel en móvil: superpuesto y plegable ---------- */
 @media (max-width: 767px) {
   .panel {
-    position: absolute; inset: 0 auto 0 0; z-index: 900;
+    /* Por encima de los controles y la leyenda de Leaflet (z-index 1000) */
+    position: absolute; inset: 0 auto 0 0; z-index: 1100;
     width: min(88vw, 22rem);
     box-shadow: 0 10px 30px rgb(15 23 42 / 0.2);
     transition: transform 0.2s ease;
@@ -208,3 +211,48 @@ body[data-siguiendo='true'] .leyenda-mapa { display: none; }
   outline: 1.5px dashed #e5007d; outline-offset: 1.5px;
 }
 .ficha-datos .dato-horario { color: #9d174d; }
+
+/* ---------- Pestañas del panel ---------- */
+.pestanas { display: flex; border-bottom: 1px solid #e2e8f0; padding: 0 12px; gap: 4px; }
+.pestanas button {
+  padding: 10px 10px 9px; font-size: 13px; font-weight: 600; color: #64748b;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.pestanas button:hover { color: #0f172a; }
+.pestanas button[aria-selected='true'] { color: var(--color-acento); border-bottom-color: var(--color-acento); }
+
+/* ---------- Próximo tren ---------- */
+.campo {
+  width: 100%; border: 1px solid #e2e8f0; border-radius: 0.5rem; background: #f8fafc;
+  padding: 0.45rem 0.6rem; font-size: 13px; color: #1e293b;
+}
+.campo:focus { outline: none; border-color: var(--color-acento); background: #fff; box-shadow: 0 0 0 3px rgb(37 99 235 / 0.15); }
+.campo[data-invalido='true'] { border-color: #f87171; background: #fef2f2; }
+.trayecto-campos { display: grid; grid-template-columns: 1fr; gap: 6px; position: relative; }
+.boton-intercambiar {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-30%); z-index: 1;
+  display: grid; place-items: center; width: 28px; height: 28px; border-radius: 9999px;
+  background: #fff; border: 1px solid #e2e8f0; color: #475569; box-shadow: 0 1px 3px rgb(15 23 42 / 0.12);
+}
+.boton-intercambiar:hover { color: var(--color-acento); border-color: var(--color-acento); }
+.trayecto-campos .campo { padding-right: 2.6rem; }
+.trayecto-lineas { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12px; color: #64748b; }
+.trayecto-lineas:empty { display: none; }
+.trayecto-lineas span:first-child { margin-right: 2px; }
+.trayecto-vacio { padding: 24px 16px; text-align: center; font-size: 13px; color: #94a3b8; }
+.trayecto-tren { padding: 10px 16px; }
+.trayecto-fila { display: flex; align-items: center; gap: 8px; }
+.trayecto-faltan { font-size: 17px; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
+.trayecto-hora { margin-left: auto; font-size: 13px; color: #334155; font-variant-numeric: tabular-nums; }
+.trayecto-hora s { color: #94a3b8; font-weight: 400; }
+.trayecto-detalle { margin: 2px 0 4px; font-size: 12px; color: #64748b; }
+.trayecto-pie { justify-content: space-between; }
+.trayecto-estado { font-size: 11px; font-weight: 600; border-radius: 9999px; padding: 1px 8px; }
+.trayecto-estado.vivo { background: #dcfce7; color: #166534; }
+.trayecto-estado.retraso { background: #fef3c7; color: #92400e; }
+.trayecto-estado.cancelado { background: #f1f5f9; color: #475569; }
+.trayecto-estado.programado { background: #f1f5f9; color: #64748b; }
+.trayecto-ver { font-size: 12px; font-weight: 600; color: var(--color-acento); }
+.trayecto-ver:hover { text-decoration: underline; }
+.es-cancelado .trayecto-faltan, .es-cancelado .trayecto-hora, .es-cancelado .trayecto-detalle { text-decoration: line-through; color: #94a3b8; }
+.trayecto-nota { padding: 8px 16px 10px; font-size: 11px; color: #94a3b8; border-top: 1px solid #f1f5f9; }

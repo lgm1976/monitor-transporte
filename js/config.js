@@ -154,6 +154,17 @@ export const CONFIG = {
     },
   ],
 
+  /**
+   * Horarios completos de Cercanías para la pestaña «Próximo tren»
+   * (un archivo por núcleo, generado por scripts/generar_diccionarios.py).
+   */
+  horariosCercanias: {
+    indice: 'data/horarios/cercanias/indice.json',
+    carpeta: 'data/horarios/cercanias/',
+    /** Núcleo que se abre si no hay otro elegido */
+    nucleoPorDefecto: 'madrid',
+  },
+
   /** Ruta al .proto (solo se carga si algún feed llega en binario) */
   rutaProto: 'data/gtfs-realtime.proto',
   /** protobuf.js en versión ESM desde CDN, cargado bajo demanda */

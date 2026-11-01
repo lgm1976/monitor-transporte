@@ -18,6 +18,22 @@ Cada archivo contiene:
 
 Solo se incluyen los viajes que circulan en una ventana corta de días
 (ayer, hoy y mañana por defecto) para que los archivos sean ligeros.
+
+Además genera los horarios COMPLETOS de Cercanías (todas las paradas
+de cada tren), un archivo por núcleo, para la pestaña «Próximo tren»:
+
+  data/horarios/cercanias/indice.json      núcleos disponibles
+  data/horarios/cercanias/<núcleo>.json    p. ej. madrid.json
+
+Cada archivo de núcleo contiene:
+  fechas      ["AAAA-MM-DD", ...]  (ayer, hoy, mañana)
+  lineas      [[nombre, color, color de texto], ...]
+  estaciones  [[stop_id, nombre], ...]
+  patrones    [[índice estación, ...], ...]   secuencias de paradas
+  viajes      [[trip_id, índice fecha, índice línea, índice patrón,
+                salida en minutos, [minutos hasta cada parada siguiente]]]
+De ayer solo se guardan los viajes que siguen circulando pasada la
+medianoche. La web solo descarga el núcleo que elige el usuario.
 Pensado para ejecutarse cada noche desde GitHub Actions.
 
 Uso:
@@ -43,6 +59,7 @@ from zoneinfo import ZoneInfo
 ZONA = ZoneInfo("Europe/Madrid")
 RAIZ = Path(__file__).resolve().parent.parent
 SALIDA = RAIZ / "data" / "diccionarios"
+SALIDA_HORARIOS = RAIZ / "data" / "horarios" / "cercanias"
 
 FEEDS = {
     "cercanias": {
@@ -184,6 +201,114 @@ def generar(clave: str, zf: zipfile.ZipFile, dias: list[date]) -> dict:
     }
 
 
+def a_minutos(hhmmss: str) -> int | None:
+    """'25:10:00' → 1510 (sin dar la vuelta: el GTFS permite pasar de 24 h)."""
+    if not hhmmss:
+        return None
+    h, m, *_ = hhmmss.split(":")
+    return int(h) * 60 + int(m)
+
+
+def slug(texto: str) -> str:
+    """'Murcia/Alicante' → 'murcia-alicante'; 'Cádiz' → 'cadiz'."""
+    import unicodedata
+    t = unicodedata.normalize("NFD", texto).encode("ascii", "ignore").decode().lower()
+    return "-".join("".join(c if c.isalnum() else " " for c in t).split())
+
+
+def generar_horarios_cercanias(zf: zipfile.ZipFile, hoy: date) -> dict[str, dict]:
+    """Horarios completos por núcleo: ayer (solo lo que cruza la medianoche), hoy y mañana."""
+    fechas = [hoy - timedelta(days=1), hoy, hoy + timedelta(days=1)]
+    nombres_dia = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+    # service_id → índices de fecha en los que circula
+    fechas_servicio: dict[str, list[int]] = {}
+    for f in leer_csv(zf, "calendar.txt"):
+        for i, d in enumerate(fechas):
+            ds = d.strftime("%Y%m%d")
+            if f["start_date"] <= ds <= f["end_date"] and f.get(nombres_dia[d.weekday()]) == "1":
+                fechas_servicio.setdefault(f["service_id"], []).append(i)
+    if "calendar_dates.txt" in zf.namelist():
+        for f in leer_csv(zf, "calendar_dates.txt"):
+            for i, d in enumerate(fechas):
+                if f["date"] != d.strftime("%Y%m%d"):
+                    continue
+                lista = fechas_servicio.setdefault(f["service_id"], [])
+                if f["exception_type"] == "1" and i not in lista:
+                    lista.append(i)
+                elif f["exception_type"] == "2" and i in lista:
+                    lista.remove(i)
+
+    rutas = {}
+    for r in leer_csv(zf, "routes.txt"):
+        rutas[r["route_id"]] = (
+            NUCLEOS.get(r["route_id"][:2], ""),
+            r.get("route_short_name", ""),
+            (r.get("route_color", "") or "64748B").upper(),
+            (r.get("route_text_color", "") or "FFFFFF").upper(),
+        )
+    viajes: dict[str, tuple] = {}
+    for t in leer_csv(zf, "trips.txt"):
+        if fechas_servicio.get(t["service_id"]) and t["route_id"] in rutas and rutas[t["route_id"]][0]:
+            viajes[t["trip_id"]] = (rutas[t["route_id"]], fechas_servicio[t["service_id"]])
+
+    paradas: dict[str, list] = {}
+    for st in leer_csv(zf, "stop_times.txt"):  # ~300 MB, en streaming
+        if st["trip_id"] in viajes:
+            minuto = a_minutos(st["departure_time"]) or a_minutos(st["arrival_time"])
+            if minuto is not None:
+                paradas.setdefault(st["trip_id"], []).append((int(st["stop_sequence"] or 0), st["stop_id"], minuto))
+
+    nombres = {s["stop_id"]: " ".join(s["stop_name"].split()) for s in leer_csv(zf, "stops.txt")}
+    nucleos: dict[str, dict] = {}
+    for trip_id, ((nucleo, linea, color, texto), indices_fecha) in viajes.items():
+        lista = sorted(paradas.get(trip_id, []))
+        if len(lista) < 2:
+            continue
+        n = nucleos.setdefault(nucleo, {"lineas": {}, "estaciones": {}, "patrones": {}, "viajes": []})
+        i_linea = n["lineas"].setdefault((linea, color, texto), len(n["lineas"]))
+        patron = tuple(n["estaciones"].setdefault(sid, len(n["estaciones"])) for _, sid, _ in lista)
+        i_patron = n["patrones"].setdefault(patron, len(n["patrones"]))
+        salida = lista[0][2]
+        tramos = [b[2] - a[2] for a, b in zip(lista, lista[1:])]
+        for i_fecha in indices_fecha:
+            # De ayer solo interesa lo que sigue circulando después de medianoche
+            if i_fecha == 0 and lista[-1][2] < 1440:
+                continue
+            n["viajes"].append([trip_id, i_fecha, i_linea, i_patron, salida, tramos])
+
+    generado = datetime.now(ZONA).isoformat(timespec="seconds")
+    resultado = {}
+    for nucleo, n in nucleos.items():
+        n["viajes"].sort(key=lambda v: (v[1], v[4]))
+        resultado[nucleo] = {
+            "nucleo": nucleo,
+            "generado": generado,
+            "fechas": [d.isoformat() for d in fechas],
+            "lineas": [list(k) for k in n["lineas"]],
+            "estaciones": [[sid, nombres.get(sid, sid)] for sid in n["estaciones"]],
+            "patrones": [list(p) for p in n["patrones"]],
+            "viajes": n["viajes"],
+        }
+    return resultado
+
+
+def guardar_horarios_cercanias(horarios: dict[str, dict]) -> None:
+    SALIDA_HORARIOS.mkdir(parents=True, exist_ok=True)
+    indice = []
+    for nucleo in sorted(horarios, key=lambda x: slug(x)):
+        datos = horarios[nucleo]
+        archivo = f"{slug(nucleo)}.json"
+        (SALIDA_HORARIOS / archivo).write_text(json.dumps(datos, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        indice.append({"nucleo": nucleo, "archivo": archivo, "estaciones": len(datos["estaciones"]), "viajes": len(datos["viajes"])})
+    (SALIDA_HORARIOS / "indice.json").write_text(
+        json.dumps({"generado": datetime.now(ZONA).isoformat(timespec="seconds"), "nucleos": indice}, ensure_ascii=False, indent=1),
+        encoding="utf-8",
+    )
+    total = sum((SALIDA_HORARIOS / i["archivo"]).stat().st_size for i in indice)
+    print(f"  horarios de Cercanías: {len(indice)} núcleos → {SALIDA_HORARIOS.relative_to(RAIZ)} ({total / 1024:.0f} KB)", file=sys.stderr)
+
+
 def abrir_zip(clave: str, carpeta_zips: Path | None) -> zipfile.ZipFile:
     if carpeta_zips:
         return zipfile.ZipFile(carpeta_zips / FEEDS[clave]["zip_local"])
@@ -209,6 +334,8 @@ def main() -> int:
         print(f"[{clave}] generando para {dias[0]} … {dias[-1]}", file=sys.stderr)
         with abrir_zip(clave, args.zips) as zf:
             datos = generar(clave, zf, dias)
+            if clave == "cercanias":
+                guardar_horarios_cercanias(generar_horarios_cercanias(zf, hoy))
         destino = SALIDA / f"{clave}.json"
         destino.write_text(json.dumps(datos, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         print(

@@ -4,7 +4,7 @@
  * Lógica pura (sin DOM ni Leaflet, testeable con node --test) para:
  *   - el ámbito: filtro por tipo de servicio y por núcleo de Cercanías
  *   - identificar un tren de forma estable para seguirlo y compartirlo
- *   - leer y escribir el estado en la URL (?servicio=&nucleo=&tren=)
+ *   - leer y escribir el estado en la URL (?servicio=&nucleo=&tren=&red=&desde=&hasta=)
  *   - el resumen de puntualidad del ámbito elegido
  */
 
@@ -104,6 +104,10 @@ export function leerEstadoUrl(busqueda) {
     tren: (p.get('tren') || '').trim(),
     servicio: p.get('servicio') || '',
     nucleo: p.get('nucleo') || '',
+    // Pestaña «Próximo tren»: núcleo (archivo) y estaciones
+    red: p.get('red') || '',
+    desde: p.get('desde') || '',
+    hasta: p.get('hasta') || '',
   };
 }
 
@@ -115,7 +119,7 @@ export function leerEstadoUrl(busqueda) {
  */
 export function escribirEstadoUrl(href, estado) {
   const url = new URL(href);
-  for (const clave of ['modo', 'tren', 'servicio', 'nucleo']) {
+  for (const clave of ['modo', 'tren', 'servicio', 'nucleo', 'red', 'desde', 'hasta']) {
     if (!(clave in estado)) continue;
     if (estado[clave]) url.searchParams.set(clave, estado[clave]);
     else url.searchParams.delete(clave);
