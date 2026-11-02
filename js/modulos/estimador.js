@@ -51,7 +51,7 @@ export const AJUSTES_ESTIMADOR = {
   frenoMinimo: 0.25,
   /** Diferencias mayores se colocan directamente (m): por detrás del modelo / por delante */
   colocarDetrasM: 3000,
-  colocarDelanteM: 1500,
+  colocarDelanteM: 3000,
   /** Tiempo de parada en cada estación del horario de Cercanías (s) */
   paradaSeg: 30,
   /** Hasta dónde (m) puede pasar el modelo de la posición en que Renfe lo da parado */
@@ -82,6 +82,23 @@ export const AJUSTES_ESTIMADOR = {
    * posición real. Si Renfe no lo mueve en ese tiempo, el tren espera.
    */
   horizonteHorarioSeg: 600,
+  /**
+   * Modelo horario: como mucho llega a la parada número N por delante de
+   * la última posición real y se queda en ella (fase 4: si Renfe congela
+   * la posición, el tren espera en un andén y no a mitad de vía ni varios
+   * kilómetros por delante, que luego obligaría a recolocarlo hacia atrás).
+   * El horizonte de tiempo también se redondea a la parada siguiente.
+   */
+  paradasHorizonte: 1,
+  /**
+   * Modelo horario: si la última posición real está en una estación del
+   * viaje, el modelo no sale de ella hasta que Renfe lo mueva (o pasados
+   * estos segundos desde la salida prevista). Renfe suele dejar un tren en
+   * la estación con «en camino» un par de minutos y luego darlo «parado»
+   * allí mismo: si el modelo hubiera seguido, habría que recolocarlo
+   * kilómetros atrás. Negativo: sin esta retención.
+   */
+  esperaSalidaSeg: 0,
   /** Un retraso efectivo mayor que esto indica que el horario no es el suyo (s) */
   retrasoMaxSeg: 3 * 3600,
   /** Retrocesos menores que esto (m) son redondeos del feed y se ignoran */
@@ -94,7 +111,13 @@ export const AJUSTES_ESTIMADOR = {
   /** Un tren ausente se mantiene como mucho este tiempo (s) */
   retenerAusenteSeg: 600,
   /** …y si según su modelo ya ha llegado a destino, este otro (s) */
-  retenerLlegadoSeg: 180,
+  retenerLlegadoSeg: 90,
+  /**
+   * Un tren ausente que ya ha llegado se quita en cuanto aparece otro tren
+   * nuevo a menos de esto (m): Renfe lo publica con otro número para el
+   * viaje siguiente
+   */
+  sustitutoM: 300,
   /** Con un hueco entre fotogramas mayor que esto (pestaña oculta), se coloca en el modelo (s) */
   huecoMaxSeg: 5,
   /** Tope de velocidad por servicio (km/h) */
@@ -225,6 +248,8 @@ export function perfilHorario(trazado, paradas, { paradaSeg = AJUSTES_ESTIMADOR.
 
   const t = [];
   const s = [];
+  /** Cada parada: distancia por la vía y llegada y salida según el horario (para el horizonte) */
+  const enParadas = [];
   const mitad = (paradaSeg * 1000) / 2;
   situadas.forEach((p, k) => {
     const huecoAntes = k > 0 ? p.ms - situadas[k - 1].ms : Infinity;
@@ -237,12 +262,14 @@ export function perfilHorario(trazado, paradas, { paradaSeg = AJUSTES_ESTIMADOR.
     const salida = k === 0 || k === situadas.length - 1 ? p.ms : p.ms + m;
     t.push(llegada);
     s.push(p.s);
+    enParadas.push({ s: p.s, llegada, salida });
     if (salida > llegada) {
       t.push(salida);
       s.push(p.s);
     }
   });
-  return { t: Float64Array.from(t), s: Float64Array.from(s) };
+  // Paradas (sin el origen): distancia e instante de llegada, para el horizonte
+  return { t: Float64Array.from(t), s: Float64Array.from(s), paradas: enParadas };
 }
 
 /** Distancia del perfil en el instante t (acotada a la primera y la última parada) */
@@ -486,10 +513,48 @@ export class Estimador {
    * Dónde dice el modelo que va el tren en el instante t y a qué velocidad.
    * @returns {{s:number, v:number}}
    */
+  /**
+   * Instante del horario (sin retraso) hasta el que puede avanzar el
+   * modelo horario: el horizonte de tiempo redondeado a la parada
+   * siguiente, y como mucho la llegada a la parada `paradasHorizonte`
+   * por delante de la última posición real.
+   */
+  _limiteHorario(e) {
+    const ultima = e.obs[e.obs.length - 1];
+    const clave = `${ultima.t}:${ultima.s}:${e.retrasoMs}`;
+    if (e.limite?.clave === clave) return e.limite.t;
+    let limite = ultima.t - e.retrasoMs + this.a.horizonteHorarioSeg * 1000;
+    const paradas = e.perfil.paradas;
+    if (paradas?.length) {
+      let n = 0;
+      for (const p of paradas) {
+        if (p.s < ultima.s - this.a.margenHorarioM) continue;
+        if (p.s <= ultima.s + this.a.margenHorarioM) {
+          // Está en esta estación: no sale hasta que Renfe lo mueva (salvo
+          // que ya se pinte pasada la estación: pararlo ahí lo dejaría
+          // detenido a mitad de vía)
+          if (this.a.esperaSalidaSeg >= 0 && p !== paradas[paradas.length - 1] && e.s <= p.s + this.a.margenHorarioM) {
+            limite = Math.min(limite, p.salida + this.a.esperaSalidaSeg * 1000);
+            break;
+          }
+          continue;
+        }
+        // Las paradas que ya se pintan dejadas atrás no cuentan
+        if (p.s <= e.s + this.a.margenParadoM) continue;
+        n++;
+        if (this.a.paradasHorizonte > 0 && (p.llegada >= limite || n >= this.a.paradasHorizonte)) {
+          limite = p.llegada;
+          break;
+        }
+      }
+    }
+    e.limite = { clave, t: limite };
+    return limite;
+  }
+
   modelo(e, t) {
     if (e.modelo === 'horario') {
-      const ultima = e.obs[e.obs.length - 1];
-      const limite = ultima.t - e.retrasoMs + this.a.horizonteHorarioSeg * 1000;
+      const limite = this._limiteHorario(e);
       const tt = Math.min(t - e.retrasoMs, limite);
       return { s: sEnPerfil(e.perfil, tt), v: tt < limite ? velocidadEnPerfil(e.perfil, tt) : 0 };
     }
@@ -624,6 +689,8 @@ export class Estimador {
     }
 
     // Ausentes: se mantienen un tiempo, salvo que ya hayan llegado
+    const nuevos = vehiculos.filter((v) => !this._conocidos?.has(v.id));
+    this._conocidos = vistos;
     for (const [id, e] of this.trenes) {
       if (vistos.has(id)) continue;
       if (e.ausenteDesde === null) e.ausenteDesde = ahoraMs;
@@ -633,8 +700,16 @@ export class Estimador {
           ? ahoraMs - e.retrasoMs > e.perfil.t[e.perfil.t.length - 1] + 60000
           : e.s >= e.trazado.longitud - 20;
       if (ausenteSeg > this.a.retenerAusenteSeg || (llegado && ausenteSeg >= this.a.retenerLlegadoSeg)) this.trenes.delete(id);
+      else if (llegado && this._tieneSustituto(e, nuevos)) this.trenes.delete(id);
     }
     return rechazados;
+  }
+
+  /** ¿Ha aparecido un tren nuevo junto a donde está pintado (el mismo tren con otro número)? */
+  _tieneSustituto(e, nuevos) {
+    if (!nuevos.length) return false;
+    const p = puntoEnDistancia(e.trazado, e.s);
+    return nuevos.some((v) => v.id !== e.id && distanciaKm(p.lat, p.lon, v.lat, v.lon) * 1000 < this.a.sustitutoM);
   }
 
   /**

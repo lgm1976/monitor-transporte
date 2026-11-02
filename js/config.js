@@ -84,12 +84,19 @@ export const CONFIG = {
     correccionSeg: 15,
     /** Diferencias mayores (m) se colocan de golpe: por detrás / por delante del modelo */
     colocarDetrasM: 3000,
-    colocarDelanteM: 1500,
+    colocarDelanteM: 3000,
     /** Parada en cada estación del horario de Cercanías (s) */
     paradaSeg: 30,
     /** Tiempo máximo que el modelo avanza sin una posición nueva de Renfe (s) */
     horizonteSeg: 600,
     horizonteHorarioSeg: 600,
+    /**
+     * Cercanías (horario): como mucho hasta la parada N por delante del
+     * último dato de Renfe, y sin salir de la estación en que Renfe lo da
+     * hasta que lo mueva (fase 4: evita recolocarlo hacia atrás)
+     */
+    paradasHorizonte: 1,
+    esperaSalidaSeg: 0,
     /** Un tren que falta en el feed se mantiene hasta este tiempo (s) */
     retenerAusenteSeg: 600,
     /**

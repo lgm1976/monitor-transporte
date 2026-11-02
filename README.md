@@ -12,7 +12,7 @@ Aplicación web estática que muestra en un mapa interactivo la posición y la p
 - **Próximo tren** entre dos estaciones de Cercanías, con cuenta atrás y retraso en vivo
 - **Panel de estación** (próximos trenes en los dos sentidos) y **favoritos** de estaciones y trayectos; las estaciones de Cercanías se ven en el mapa al acercarse
 - **Avisos de servicio** de Renfe Cercanías (incidencias, obras y accesibilidad) en su pestaña, en la ficha de cada tren y en el panel de estación
-- **Información y novedades**: botón de la cabecera con la descripción del proyecto y lo nuevo de cada versión (versión actual: **1.8**)
+- **Información y novedades**: botón de la cabecera con la descripción del proyecto y lo nuevo de cada versión (versión actual: **1.9**)
 - Colores y umbrales de retraso definidos en `data/estilo_mapa.json`
 
 ## Estructura
@@ -79,6 +79,7 @@ scripts/
                            vía entre cada par de estaciones de AV/LD/MD y OUIGO
   grabar_feeds.mjs         Graba los feeds en tiempo real de Renfe (para el banco de pruebas)
   medir_fluidez.mjs        Banco de pruebas: mide lo que se ve en el mapa con una grabación
+  diagnosticar_fluidez.mjs Banco de pruebas: causa de cada salto, parada y tren que termina
   fluidez/                 Carga de grabaciones, réplica de la animación, estimador y métricas
 .github/workflows/
   diccionarios.yml         Ejecuta los scripts cada noche (el de OSM, los lunes) y sube los cambios
@@ -302,7 +303,7 @@ Cada mejora que se note al usar la web **sube la versión y añade su entrada** 
 
 Las correcciones internas, los cambios de datos (la Action nocturna) y las mejoras que no cambian lo que se ve no llevan versión.
 
-Historial reconstruido a partir de los commits: 1.0 a 1.3 el 01/11/2026 (primera versión, fichas legibles y movimiento continuo, filtros y seguir un tren, OUIGO y «Próximo tren»), 1.4 a 1.8 el 02/11/2026 (trenes por la vía y recorrido, movimiento fluido, panel de estación y favoritos, avisos, grupos de trenes e información).
+Historial reconstruido a partir de los commits: 1.0 a 1.3 el 01/11/2026 (primera versión, fichas legibles y movimiento continuo, filtros y seguir un tren, OUIGO y «Próximo tren»), 1.4 a 1.9 el 02/11/2026 (trenes por la vía y recorrido, movimiento fluido, panel de estación y favoritos, avisos, grupos de trenes e información, y el ajuste del movimiento en hora punta).
 
 ## Grupos de trenes con el mapa alejado
 
@@ -509,7 +510,7 @@ Evolución prevista: que cada parada del recorrido muestre los trenes que pasar�
 
 Si un tren no tiene trazado, o su posición está lejos de la vía (desvíos, datos erróneos), se mantiene el movimiento en línea recta.
 
-## Plan: movimiento fluido de los trenes (fases 1, 2 y 3 hechas)
+## Plan: movimiento fluido de los trenes (hecho: fases 1 a 4)
 
 **Problema.** A veces los trenes se quedan detenidos entre estaciones, luego corren muchísimo, después muy poco, o desaparecen y reaparecen en otro sitio.
 
@@ -543,7 +544,7 @@ Si un tren no tiene trazado, o su posición está lejos de la vía (desvíos, da
    - El estimador sustituye a `_moverPorVia` para los trenes con vía; los que no tienen vía siguen como ahora.
    - Un tren que falta en una lectura se mantiene hasta unos minutos, avanzando según su estimación, con su ficha diciendo «última posición hace X min». Se quita si no vuelve o si ya debería haber llegado a destino.
    - El tren seguido y su recorrido usan la posición estimada.
-4. **Medición y ajuste.** Repetir el banco de pruebas, comparar con la referencia, ajustar parámetros, probar en el navegador con datos reales y en el simulado, y documentarlo.
+4. **Medición y ajuste. Hecha el 02/11/2026** (ver «Ajustes de la fase 4 (hora punta)»). Grabación nueva en hora punta, diagnóstico tren a tren de cada salto y cada parada, cuatro ajustes del estimador y prueba en el navegador.
 
 **Objetivos** (los comprueba el banco de pruebas, por familia; resultado del estimador en «Resultados del estimador»): ningún tren pintado por encima de su tope; menos de 0,1 paradas de más de 30 s fuera de estación (sin que Renfe lo dé parado) por hora de tren; ninguna desaparición de menos de 3 minutos; y la posición pintada, de media, a menos de 400 m (un salto del feed) de la trayectoria de referencia. La animación actual no cumple ninguno (ver la tabla del banco de pruebas).
 
@@ -558,13 +559,13 @@ Si un tren no tiene trazado, o su posición está lejos de la vía (desvíos, da
 
 - **Modelo horario (Cercanías).** Con el horario del núcleo (`data/horarios/cercanias`, cruzando por `trip_id` y eligiendo la fecha de servicio que toca) se construye la distancia por la vía en función de la hora: 30 s de parada en cada estación intermedia, salida del origen y llegada al destino a su hora, velocidad constante entre estaciones. El tren va donde dice ese horario desplazado un **retraso efectivo δ**, que corrige cada posición nueva de Renfe (con 100 m de margen; si cae en una estación, vale cualquier δ del tiempo de parada y se conserva el que había). Al principio δ es el retraso del TripUpdate.
 - **Modelo de velocidad (AV/LD/MD, o Cercanías sin horario).** Desde la última posición real, a la velocidad media de los últimos 2 minutos por la vía. Un tren recién aparecido va a la mitad del tope de su servicio hasta que una segunda posición dé la real (Renfe no publica velocidad). Si Renfe lo da `STOPPED_AT`, no avanza.
-- **Horizonte.** Ningún modelo avanza más de 10 minutos sin una posición nueva de Renfe; pasado ese tiempo, el tren espera.
-- **Corrección suave.** La velocidad pintada es la del modelo más la diferencia repartida en 15 s, sin pasar del tope del servicio (con la escala real de la vía en ese punto) y sin ir nunca marcha atrás. Si va por delante, frena hasta un 25 % de la velocidad del modelo, pero no se para salvo que el modelo esté parado. Con más de 3 km por detrás o 1,5 km por delante se coloca directamente.
+- **Horizonte.** Ningún modelo avanza más de 10 minutos sin una posición nueva de Renfe; pasado ese tiempo, el tren espera. En el modelo horario, además (desde la fase 4), el tren llega como mucho a la parada siguiente a la última posición real y espera en ella; y si Renfe lo da en una estación, no sale de ella hasta que lo mueva.
+- **Corrección suave.** La velocidad pintada es la del modelo más la diferencia repartida en 15 s, sin pasar del tope del servicio (con la escala real de la vía en ese punto) y sin ir nunca marcha atrás. Si va por delante, frena hasta un 25 % de la velocidad del modelo, pero no se para salvo que el modelo esté parado. Con más de 3 km por detrás o por delante se coloca directamente.
 - **Datos de Renfe que no se creen a la primera:**
   - Una posición que exigiría ir a más de 1,5 veces el tope queda en **cuarentena**: se acepta si cuadra con el horario y el retraso publicado, o si sigue igual en la lectura siguiente. Renfe a veces manda un tren al final de su línea durante una sola lectura (un C1 de Santander saltó 38 km y volvió).
   - En la estación de origen, mientras Renfe lo siga dando allí, el tren no sale (aunque sea su hora) y se supone que sigue ahí hasta la lectura siguiente. Si lo da `STOPPED_AT` en otra estación, el modelo no pasa de ella.
   - Dos posiciones seguidas hacia atrás por su vía (viaje mal asignado, como los 7 de 68 de Madrid que van al contrario) sueltan el tren: el mapa lo mueve como antes, desde donde estaba pintado.
-- **Trenes ausentes.** Un tren que falta en una lectura sigue avanzando según su modelo, marcado como `estimado`, hasta 10 minutos (3 si según su modelo ya ha llegado a destino).
+- **Trenes ausentes.** Un tren que falta en una lectura sigue avanzando según su modelo, marcado como `estimado`, hasta 10 minutos. Si según su modelo ya ha llegado a destino, 90 s, o hasta que Renfe publique otro tren nuevo a menos de 300 m (el mismo tren con otro número para el viaje siguiente).
 - **Coste.** 0,27 ms por fotograma con 552 trenes y 3,5 ms por lectura (sin contar Leaflet).
 
 Interfaz: `actualizar(vehiculos, ahoraMs)` con cada lectura (devuelve los trenes que no estima, con dónde estaban pintados) y `fotograma(ahoraMs)` en cada fotograma (`{lat, lon, rumbo, s, estimado, modelo}` por tren). Los horarios se piden con `horarioDe(v, ahoraMs)`, que puede devolver `undefined` mientras se descargan. Los parámetros están en `CONFIG.estimador` (los que no aparecen, en `AJUSTES_ESTIMADOR`).
@@ -577,7 +578,7 @@ Desde el 02/11/2026 el mapa usa el estimador (`CONFIG.estimador.activo: true`):
 - **Cada lectura** (`app.js` → `mapa.registrarLectura`) pasa al estimador **todos** los trenes, no solo los que dejan ver los filtros: un tren oculto por un filtro no ha desaparecido. Después se pintan los visibles como siempre.
 - **Cada fotograma** el estimador avanza todos los trenes (0,2-0,4 ms con unos 550 en el navegador) y se colocan los que están a la vista y el seguido. El bucle sigue mientras haya trenes estimados, a 30 fotogramas por segundo; se para con la pestaña oculta y al volver cada tren se coloca donde dice su modelo.
 - **Horarios de Cercanías.** El estimador los pide por núcleo según aparecen sus trenes (`js/fuentes/almacenHorariosCercanias.js`, una descarga por núcleo que comparte con el recorrido del tren seguido). Mientras llega, el tren va con el modelo de velocidad; en la lectura siguiente pasa al horario. Con datos reales se descargan los 14 núcleos (unos 30 s en cargar el de Madrid, el más grande).
-- **Trenes que faltan en una lectura.** `registrarLectura` devuelve los que el estimador sigue moviendo con `estimado: true` y `ausenteDesdeMs`, y `app.js` los añade a la lista: siguen en el mapa (semitransparentes), en el listado y en los contadores, y se pueden seguir. Su ficha dice «Posición: Estimada · último dato hace X min» y explica que se quitará si no vuelve; la tarjeta del tren seguido, «posición estimada · último dato hace X». Se quitan a los 10 minutos (3 si según su modelo ya ha llegado).
+- **Trenes que faltan en una lectura.** `registrarLectura` devuelve los que el estimador sigue moviendo con `estimado: true` y `ausenteDesdeMs`, y `app.js` los añade a la lista: siguen en el mapa (semitransparentes), en el listado y en los contadores, y se pueden seguir. Su ficha dice «Posición: Estimada · último dato hace X min» y explica que se quitará si no vuelve; la tarjeta del tren seguido, «posición estimada · último dato hace X». Se quitan a los 10 minutos (a los 90 s si según su modelo ya ha llegado, o antes si Renfe publica otro tren en su sitio).
 - **Tren seguido y recorrido.** El centrado y el corte hecho/pendiente del recorrido usan la posición pintada, que ya es la estimada.
 - **Al cambiar de modo** se vacía el estimador.
 
@@ -598,6 +599,8 @@ node scripts/medir_fluidez.mjs --serie _osm/serie_2026-11-02 --algoritmos actual
 node scripts/medir_fluidez.mjs --algoritmos actual,estimador     # compara con el estimador
 node scripts/medir_fluidez.mjs --algoritmos estimador --ajustes '{"correccionSeg":10}'  # prueba parámetros
 node scripts/medir_fluidez.mjs --json _osm/…/resultados.json   # guarda todo en JSON
+node scripts/diagnosticar_fluidez.mjs --serie _osm/serie_2026-11-02_1818   # por qué salta o se para cada tren
+CAUSA=delante node scripts/diagnosticar_fluidez.mjs --detalle 30  # los 30 mayores saltos de una causa
 ```
 
 Piezas (en `scripts/fluidez/`, con pruebas en `tests/fluidez.test.mjs`):
@@ -638,7 +641,7 @@ Lo que confirma:
 
 Los datos de Renfe de la grabación de 15 minutos coinciden con el diagnóstico: en Cercanías el 26 % de los cambios de posición llegan tras más de 40 s (hasta 14,5 min), el salto p90 es de 2,6 km y la velocidad entre dos posiciones (p90) de 286 km/h; en AV/LD/MD, 7 %, 2,2 km y 294 km/h. Tras un parón, la nueva posición cae junto a una estación el 47 % de las veces en Cercanías.
 
-Las grabaciones están en `_osm/serie_2026-11-02/` (5,5 min, sin TripUpdates) y `_osm/serie_2026-11-02_1348/` (15 min, con TripUpdates), cada una con su `fluidez_referencia.json` (animación actual, fase 1) y `fluidez_fase2.json` / `.txt` (actual, rápida y estimador, con la referencia sin picos); `_osm/` no se sube a GitHub. Los diccionarios cubren ayer, hoy y mañana: para medir una grabación de hace más de un día hay que regenerarlos para esa fecha (el script avisa si muchos viajes no aparecen).
+Las grabaciones están en `_osm/serie_2026-11-02/` (5,5 min, sin TripUpdates), `_osm/serie_2026-11-02_1348/` (15 min, con TripUpdates) y `_osm/serie_2026-11-02_1818/` (19 min en hora punta, con TripUpdates; sus resultados en `fluidez_fase4.txt` y `diagnostico_fase4.txt`), cada una con su `fluidez_referencia.json` (animación actual, fase 1) y `fluidez_fase2.json` / `.txt` (actual, rápida y estimador, con la referencia sin picos); `_osm/` no se sube a GitHub. Los diccionarios cubren ayer, hoy y mañana: para medir una grabación de hace más de un día hay que regenerarlos para esa fecha (el script avisa si muchos viajes no aparecen).
 
 ### Resultados del estimador (fase 2)
 
@@ -667,9 +670,47 @@ Frente a los objetivos:
 
 Ajustes probados con el banco (`--ajustes`): corregir en 8, 10 o 25 s, colocar a partir de 1,5, 2 o 6 km, horizontes de 2, 3, 5 y 10 minutos, paradas de 20 o 45 s, freno mínimo del 50 %, velocidad inicial del 35 %. Los valores elegidos equilibran saltos, paradas y distancia; los horizontes de 10 minutos son los que más mejoran las paradas fuera de estación. Cercanías sin horario (`estimador-velocidad`, todo con el modelo de velocidad) va bastante peor: 1,06 paradas fuera de estación por hora y 1,2 km de media a la referencia, frente a 0,15 y 646 m con el horario.
 
+### Ajustes de la fase 4 (hora punta)
+
+**Grabación.** 02/11/2026 de 18:18 a 18:38, 117 lecturas con TripUpdates (`_osm/serie_2026-11-02_1818/`): 458 trenes de Cercanías y 179 de AV/LD/MD. Los datos de Renfe se comportan igual que a mediodía: en Cercanías el 25 % de los cambios de posición llegan tras más de 40 s (hasta 19 min) y, tras un parón, la nueva posición cae junto a una estación el 50 % de las veces.
+
+**Diagnóstico.** `scripts/diagnosticar_fluidez.mjs` reproduce la grabación con el estimador y clasifica cada incidencia por su causa. Con el estimador de la fase 3 salieron tres problemas:
+
+1. **Saltos hacia atrás en Cercanías** (130 en 15 minutos a mediodía, mediana 1,8 km). No los provocaba un dato nuevo. Renfe deja un tren «en camino» en la misma posición uno o dos minutos y luego lo da «parado» allí mismo, en una estación. Mientras tanto, el modelo horario seguía hasta 10 minutos de horario (varias estaciones), y al llegar el «parado» había que recolocarlo kilómetros atrás.
+2. **Paradas a mitad de vía** de los trenes que esperaban a que Renfe los moviera al agotar el horizonte de 10 minutos.
+3. **Trenes que terminan viaje.** De los que dejan de aparecer cuando según su modelo ya han llegado, 38 de 49 no vuelven, y los que vuelven lo hacen antes de 80 s. Se quedaban 3 minutos en el mapa. El caso de Renfe publicando el mismo tren con otro número en el mismo sitio es raro (1 de cada 30 a mediodía, ninguno en hora punta).
+
+**Cambios** (`CONFIG.estimador`, con pruebas en `tests/estimador.test.mjs`):
+
+- `esperaSalidaSeg: 0`: si la última posición de Renfe está en una estación del viaje, el modelo horario no sale de ella hasta que Renfe lo mueva. Si el tren ya se pinta pasada esa estación, no se le hace esperar (se quedaría parado a mitad de vía). Esperar 20 s más allá de la salida prevista lo empeoraba todo (1,6 paradas fuera de estación por hora de tren).
+- `paradasHorizonte: 1`: sin datos nuevos, el modelo horario llega como mucho a la parada siguiente y espera allí; el horizonte de 10 minutos también se redondea a una parada. Con 2 o 3 paradas los resultados son casi iguales; con 1, algo menos de saltos.
+- `colocarDelanteM: 3000` (antes 1.500): un tren pintado por delante de su modelo frena hasta un cuarto de su velocidad en vez de recolocarse hacia atrás, salvo que la diferencia pase de 3 km. Con 5 km apenas mejora más.
+- `retenerLlegadoSeg: 90` (antes 180) y `sustitutoM: 300`: un tren ausente que ya ha llegado se quita a los 90 s, o en cuanto aparece otro tren nuevo a menos de 300 m.
+
+Probados y descartados: limitar a 30 o 90 s la extrapolación de un tren del que solo hay una posición (los Media Distancia y Regionales que Renfe actualiza cada 5 o 10 minutos quedan parados más tiempo fuera de estación: 0,65 frente a 0,29 por hora de tren); corregir en 10 s en lugar de 15 (igual); frenar hasta el 40 % en lugar del 25 % (igual).
+
+**Resultados.** Hora punta (19 minutos), lo que se ve en el mapa:
+
+| | Cercanías: actual → fase 3 → fase 4 | AV/LD/MD: actual → fase 3 → fase 4 |
+|---|---|---|
+| Trenes por encima de su tope | 220 → 1 → 1 | 144 → 5 → 5 |
+| Paradas de más de 30 s fuera de estación, por hora de tren | 0,38 → 0,25 → **0,07** | 3,46 → 0,46 → 0,48 |
+| Saltos por hora de tren | 21,0 → 2,8 → **1,8** | 68,0 → 5,4 → **4,4** |
+| Desapariciones de menos de 3 min | 92 → 1 → 1 | 47 → 1 → 1 |
+| Distancia a la última posición de Renfe: media | 105 → 623 → **411** m | 319 → 1.205 → 1.269 m |
+| Distancia a la referencia: media / p50 | 951 / 449 → 806 / 358 → 873 / 387 m | 1.884 / 804 → 1.718 / 558 → 1.719 / 575 m |
+
+Con la grabación de mediodía (15 minutos), de la fase 3 a la 4: en Cercanías, paradas fuera de estación 0,15 → 0,05 por hora de tren, saltos 2,5 → 1,5 y distancia media a la última posición de Renfe 468 → 288 m; en larga distancia, saltos 4,7 → 3,5 y paradas igual (0,29).
+
+- **Cercanías cumple el objetivo de paradas fuera de estación** (menos de 0,1 por hora de tren) en las dos grabaciones. Los trenes esperan en los andenes, que es lo natural, en vez de adelantarse y volver.
+- **El precio**: la distancia media a la trayectoria de referencia sube un poco (806 → 873 m en hora punta), porque al esperar en la estación el tren va unos segundos por detrás cuando Renfe sí lo había movido. La mediana sigue por debajo de 400 m.
+- **Lo que queda son datos de Renfe**: los saltos hacia delante (mediana 4 km) son trenes que Renfe no mueve durante minutos y de repente adelanta varios kilómetros, o viajes que no casan con su horario (trenes con hora y media de adelanto: el feed les asigna un viaje que no es el suyo). En larga distancia no hay horas de paso intermedias, así que el modelo de velocidad no puede hacerlo mejor (ver próximos pasos). El tren de Cercanías y los cinco de larga distancia por encima del tope son trenes que el estimador suelta (van hacia atrás por su vía) y mueve la animación de siempre.
+
+**En el navegador** (02/11/2026, de 18:58 a 19:15, datos reales, Madrid con zoom 12, dos minutos y medio por versión tras 90 s de arranque): 4 saltos en la versión nueva frente a 11 en la de la fase 3 (en otra pasada, 6 y 6), unos 58 fotogramas por segundo y sin errores. Más trenes esperan en una estación (29 frente a 10). Fuera de estación quedaron 2 (frente a 0), los dos en la zona de Chamartín y Fuencarral. En el modo simulado, sin saltos y sin errores.
+
 ## Próximos pasos sugeridos
 
-- Movimiento fluido de los trenes: fase 4, medición y ajuste (ver el plan anterior; es lo siguiente). Grabar una serie nueva en hora punta, repetir el banco de pruebas, revisar en el navegador los trenes que aún se colocan de golpe y los que quedan parados fuera de estación, y decidir si los trenes que terminan viaje (Renfe les cambia el id) deben quitarse antes de los 3 minutos.
+- Movimiento fluido, lo que queda: en Cercanías, pasar al modelo de velocidad los trenes cuyo viaje no casa con su horario (más de 10 minutos de adelanto); en larga distancia, usar las horas de paso intermedias (abajo) para un modelo horario como el de Cercanías, que es lo que más saltos quitaría.
 - Arrancar centrado en la zona del usuario (con permiso de ubicación).
 - Panel de estación también para larga distancia (necesita las horas de paso de larga distancia, más abajo) y estaciones de larga distancia en el mapa.
 - Ofrecer el transbordo también cuando llega antes que el directo; dos transbordos; Media Distancia.

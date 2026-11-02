@@ -31,7 +31,7 @@
       {
         "titulo": "Ten en cuenta",
         "lista": [
-          "Renfe renueva las posiciones cada 15 o 20 segundos. Entre un dato y el siguiente, la web calcula por dónde va cada tren, así que su posición en el mapa es aproximada.",
+          "Renfe renueva las posiciones cada 15 o 20 segundos. Entre un dato y el siguiente, la web calcula por dónde va cada tren, así que su posición en el mapa es aproximada. Si Renfe tarda en mover un tren de Cercanías, el mapa lo espera en la estación hasta el dato siguiente.",
           "Los trenes OUIGO se sitúan según su horario: si llevan retraso, no lo sabemos.",
           "Con «Ver simulados» la web muestra trenes inventados, para probarla sin datos en vivo.",
           "Es un proyecto personal, sin relación con Renfe ni con ningún otro operador. Para decisiones importantes, consulta siempre la información oficial."
@@ -40,6 +40,16 @@
     ]
   },
   "versiones": [
+    {
+      "version": "1.9",
+      "fecha": "2026-11-02",
+      "titulo": "Trenes más fluidos en hora punta",
+      "cambios": [
+        "Los trenes de Cercanías ya no retroceden de golpe por la vía: si Renfe tarda en dar su posición, el tren espera en la estación en vez de adelantarse y volver atrás.",
+        "Menos trenes detenidos entre dos estaciones y menos saltos, también en Media y Larga Distancia.",
+        "Un tren que termina su viaje desaparece antes del mapa, sobre todo cuando Renfe ya lo publica con otro número para el viaje siguiente."
+      ]
+    },
     {
       "version": "1.8",
       "fecha": "2026-11-02",

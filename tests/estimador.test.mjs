@@ -132,6 +132,49 @@ test('Estimador: espera en la estación de origen mientras Renfe lo da allí', (
   assert.ok(est.fotograma(seg(30)).get('X').s < 60, 'no sale antes que el tren');
 });
 
+test('Estimador con horario: si el feed se congela, llega como mucho a la parada siguiente y espera allí', () => {
+  const est = new Estimador({ paradasHorizonte: 1 }, { horarioDe: () => PARADAS });
+  est.actualizar([tren(500)], seg(26));
+  const s = recorrer(est, 26, 400);
+  // Sin datos nuevos, el horizonte de 10 min lo habría llevado hasta C
+  assert.ok(Math.max(...s) <= 2015, `se queda en B (${Math.max(...s)})`);
+  assert.ok(s[s.length - 1] > 1990, 'espera en la estación B, no a mitad de vía');
+});
+
+test('Estimador con horario: no sale de la estación en que lo da Renfe hasta que lo mueva', () => {
+  const est = new Estimador({}, { horarioDe: () => PARADAS });
+  est.actualizar([tren(2000)], seg(110)); // en B, «en camino»
+  const s = recorrer(est, 110, 200);
+  assert.ok(Math.max(...s) <= 2015, `sigue en B (${Math.max(...s)})`);
+  // Renfe lo da después parado en B: no hay que recolocarlo hacia atrás
+  est.actualizar([tren(2000, { estadoParada: 'STOPPED_AT' })], seg(200));
+  const p = recorrer(est, 200, 220);
+  for (let i = 1; i < p.length; i++) assert.ok(p[i] >= p[i - 1] - 0.01, 'nunca marcha atrás');
+  // Cuando Renfe lo mueve, sale y alcanza la posición real sin pasar del tope
+  est.actualizar([tren(2600)], seg(220));
+  const q = recorrer(est, 220, 260);
+  assert.ok(q[q.length - 1] > 2600, `sale de B (${q[q.length - 1]})`);
+  for (let i = 1; i < q.length; i++) assert.ok((q[i] - q[i - 1]) / 0.5 <= (140 / 3.6) * 1.0001, 'sin pasar del tope');
+});
+
+test('Estimador: un tren ausente que ya llegó se quita en cuanto Renfe publica otro tren en su sitio', () => {
+  const crear = () => {
+    const est = new Estimador({ retenerLlegadoSeg: 60 }, { horarioDe: () => PARADAS });
+    est.actualizar([tren(3990, { estadoParada: 'STOPPED_AT' })], seg(240)); // en C, destino
+    est.actualizar([], seg(250)); // deja de aparecer
+    return est;
+  };
+  const otro = { ...tren(3980), id: 'Y', tripId: 'V2' };
+  const conSustituto = crear();
+  conSustituto.actualizar([otro], seg(305));
+  assert.equal(conSustituto.tiene('X'), false, 'el mismo tren con otro número: se quita el viejo');
+  const sinSustituto = crear();
+  sinSustituto.actualizar([], seg(305));
+  assert.equal(sinSustituto.tiene('X'), true, 'sin otro tren, se mantiene hasta 60 s');
+  sinSustituto.actualizar([], seg(315));
+  assert.equal(sinSustituto.tiene('X'), false, 'y después se quita');
+});
+
 test('Estimador con velocidad: sigue a su velocidad media y para si Renfe lo da parado', () => {
   const est = new Estimador({}, {});
   const ld = (m, extra = {}) => tren(m, { id: 'L', servicio: 'Media Distancia', familia: 'AV/LD/MD', ...extra });
