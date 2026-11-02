@@ -1,1 +1,4 @@
 __pycache__/
+# Caché local de las teselas de OpenStreetMap (generar_trazados_osm.py --osm)
+_osm/
+_proyecto.tgz

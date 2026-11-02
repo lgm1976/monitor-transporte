@@ -1,7 +1,8 @@
 # Regenera cada noche los diccionarios de estaciones, líneas y viajes
 # a partir del GTFS estático de Renfe (con los trazados de las vías de
-# Cercanías), y los horarios de OUIGO (trenes
-# según horario), y los sube al repositorio.
+# Cercanías), y los horarios de OUIGO (trenes según horario), y los sube
+# al repositorio. Los lunes, antes, rehace con OpenStreetMap la red de
+# vías de larga distancia (data/trazados/ld/red.json).
 # GitHub Pages vuelve a publicar la web automáticamente tras el commit.
 name: Actualizar diccionarios GTFS
 
@@ -10,6 +11,11 @@ on:
     # 04:37 en Madrid en invierno (03:37 UTC); Renfe publica sus ficheros de madrugada
     - cron: '37 3 * * *'
   workflow_dispatch: # botón «Run workflow» para lanzarlo a mano
+    inputs:
+      trazados_osm:
+        description: 'Rehacer también la red de vías de larga distancia (OpenStreetMap, ~20 min)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -21,13 +27,24 @@ concurrency:
 jobs:
   generar:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      # Las vías no cambian a diario: solo los lunes o si se pide a mano.
+      # Va antes de los diccionarios, que enlazan cada viaje con su trazado.
+      # Si Overpass falla, se conserva la red de la semana anterior.
+      - name: Red de vías de larga distancia (OpenStreetMap)
+        if: github.event_name == 'schedule' || inputs.trazados_osm
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$(date -u +%u)" != "1" ]; then
+            echo "Hoy no toca (solo los lunes)."; exit 0
+          fi
+          python3 scripts/generar_trazados_osm.py || echo "::warning::No se pudo rehacer la red de vías de OSM; se mantiene la anterior"
 
       - name: Generar diccionarios
         run: python3 scripts/generar_diccionarios.py

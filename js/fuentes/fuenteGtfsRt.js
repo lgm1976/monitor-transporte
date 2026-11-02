@@ -26,7 +26,7 @@ export class FuenteGtfsRt {
     /** Operadores sin tiempo real (OUIGO): trenes según horario */
     this.horario = new FuenteHorario();
     /** Trazados de las vías, cargados por núcleo según aparecen trenes */
-    this.trazados = new AlmacenTrazados();
+    this.trazados = AlmacenTrazados.compartido();
   }
 
   async iniciar() {

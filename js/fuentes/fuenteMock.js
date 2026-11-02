@@ -11,8 +11,9 @@
  * cancelado.
  *
  * Los trenes cuyo viaje tiene trazado en el diccionario simulado (C4 y
- * R1, con el trazado real de Renfe) no van por rumbo y velocidad sino
- * avanzando POR la vía, para validar la animación a lo largo de ella.
+ * R1 con el trazado real de Renfe; el AVE Madrid → Barcelona y el MD
+ * Sevilla → Málaga con la red de vías de OpenStreetMap) no van por rumbo
+ * y velocidad sino avanzando POR la vía, para validar la animación.
  */
 
 import { CONFIG } from '../config.js';
@@ -88,7 +89,7 @@ export class FuenteMock {
     this.umbrales = umbrales;
     this.feed = null;
     this.ultimaLectura = null;
-    this.trazados = new AlmacenTrazados();
+    this.trazados = AlmacenTrazados.compartido();
   }
 
   /**

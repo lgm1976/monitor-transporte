@@ -45,16 +45,22 @@ export const CONFIG = {
   },
 
   /**
-   * Trenes por la vía. Con el trazado de la línea (shapes.txt de Renfe,
-   * de momento solo Cercanías) cada posición se proyecta sobre la vía y
-   * el tren se desliza A LO LARGO de ella en vez de en línea recta.
+   * Trenes por la vía. Con el trazado de la línea (shapes.txt de Renfe en
+   * Cercanías; vías de OpenStreetMap en AV/LD/MD y OUIGO) cada posición se
+   * proyecta sobre la vía y el tren se desliza A LO LARGO de ella en vez
+   * de en línea recta. Los OUIGO según horario avanzan por la vía.
    * Sin trazado, o si la posición queda lejos de la vía (desvíos, datos
    * erróneos), se mantiene el movimiento en línea recta.
    */
   trazados: {
     activos: true,
-    /** Un archivo por núcleo (scripts/generar_diccionarios.py) */
-    carpeta: 'data/trazados/cercanias/',
+    /**
+     * cercanias/<núcleo>.json  (scripts/generar_diccionarios.py)
+     * ld/red.json              (scripts/generar_trazados_osm.py)
+     */
+    carpeta: 'data/trazados/',
+    /** Red de larga distancia: la usan los OUIGO según horario */
+    redLargaDistancia: 'ld/red',
     /** Distancia máxima (m) a la vía para considerar que el tren va por ella */
     toleranciaM: 300,
     /** Retrocesos menores que esto (m) se ignoran: un tren no va marcha atrás */

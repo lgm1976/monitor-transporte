@@ -15,8 +15,11 @@ Cada archivo contiene:
   estaciones  {stop_id: nombre}
   viajes      {trip_id: [índice de línea, origen, destino,
                          hora salida, hora llegada(, índice de trazado)]}
-  trazados    (solo Cercanías) [[archivo, shape_id], ...]: dónde está el
-              trazado de la vía de cada viaje (ver más abajo)
+  trazados    [[archivo, id], ...]: dónde está el trazado de la vía de
+              cada viaje. Cercanías: [núcleo, shape_id] (ver más abajo).
+              AV/LD/MD: ["ld/red", "60000-04040-71801"], la lista de paradas
+              sobre la red de vías de OpenStreetMap que crea
+              generar_trazados_osm.py (si data/trazados/ld/red.json existe)
 
 Solo se incluyen los viajes que circulan en una ventana corta de días
 (ayer, hoy y mañana por defecto) para que los archivos sean ligeros.
@@ -73,6 +76,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 SALIDA = RAIZ / "data" / "diccionarios"
 SALIDA_HORARIOS = RAIZ / "data" / "horarios" / "cercanias"
 SALIDA_TRAZADOS = RAIZ / "data" / "trazados" / "cercanias"
+RED_LD = RAIZ / "data" / "trazados" / "ld" / "red.json"  # generar_trazados_osm.py
 # Tolerancia de simplificación de los trazados (m). Con 5 m toda España
 # ocupa unos 70 KB (40 KB comprimidos) y el tren no se aparta de la vía.
 TOLERANCIA_TRAZADO_M = 5
@@ -186,12 +190,16 @@ def generar(clave: str, zf: zipfile.ZipFile, dias: list[date]) -> dict:
                 forma_viaje[t["trip_id"]] = t["shape_id"]
 
     # Primera y última parada de cada viaje (lectura en streaming: el
-    # stop_times de Cercanías pesa cerca de 300 MB)
+    # stop_times de Cercanías pesa cerca de 300 MB). En larga distancia se
+    # guardan todas, para enlazar el viaje con su trazado por la vía.
+    paradas_ld: dict[str, list] = {}
     for st in leer_csv(zf, "stop_times.txt"):
         v = viajes.get(st["trip_id"])
         if v is None:
             continue
         seq = int(st["stop_sequence"] or 0)
+        if not es_cercanias:
+            paradas_ld.setdefault(st["trip_id"], []).append((seq, st["stop_id"]))
         if seq < v[5]:
             v[5], v[1], v[3] = seq, st["stop_id"], hora_corta(st["departure_time"] or st["arrival_time"])
         if seq > v[6]:
@@ -211,6 +219,10 @@ def generar(clave: str, zf: zipfile.ZipFile, dias: list[date]) -> dict:
             indice_trazado[forma] = len(trazados)
             trazados.append([slug(nucleo), forma])
         v.append(indice_trazado[forma])
+
+    # Larga distancia: trazado = lista de paradas sobre la red de OSM
+    if not es_cercanias:
+        enlazar_trazados_ld(viajes_limpios, paradas_ld, trazados)
     usadas = {v[1] for v in viajes_limpios.values()} | {v[2] for v in viajes_limpios.values()}
 
     # Todas las estaciones (pocas): el feed en vivo puede citar paradas intermedias
@@ -226,13 +238,62 @@ def generar(clave: str, zf: zipfile.ZipFile, dias: list[date]) -> dict:
         "formato": {
             "lineas": ["nombre", "color", "colorTexto", "grupo"],
             "viajes": ["linea", "origen", "destino", "salida", "llegada", "trazado"],
-            "trazados": ["archivo", "shape_id"],
+            "trazados": ["archivo", "id"],
         },
         "lineas": lineas,
         "estaciones": estaciones,
         "viajes": viajes_limpios,
         **({"trazados": trazados} if trazados else {}),
     }
+
+
+def enlazar_trazados_ld(viajes: dict, paradas: dict, trazados: list) -> None:
+    """
+    Añade a cada viaje de AV/LD/MD su trazado en la red de vías de OSM
+    (data/trazados/ld/red.json, de generar_trazados_osm.py): el id es la
+    lista de paradas «60000-04040-71801» y la web encadena sus tramos.
+    Solo se enlaza si la red tiene al menos un tramo del viaje.
+    """
+    if not RED_LD.exists():
+        print("  aviso: sin data/trazados/ld/red.json; los trenes de larga distancia irán en línea recta", file=sys.stderr)
+        return
+    tramos = json.loads(RED_LD.read_text(encoding="utf-8")).get("tramos", {})
+    secuencias = {}
+    for tid in viajes:
+        seq = [sid for _, sid in sorted(paradas.get(tid, []))]
+        secuencias[tid] = [sid for i, sid in enumerate(seq) if i == 0 or sid != seq[i - 1]]
+
+    # Renfe parte un mismo tren en varios viajes solapados (Vigo → Barcelona,
+    # León → Barcelona, Zaragoza → Lleida…) y el feed en vivo da la misma
+    # posición en todos. Para que el tren encaje en la vía esté donde esté,
+    # cada viaje usa el recorrido COMPLETO de su tren (el de más paradas,
+    # si contiene el suyo). trip_id = número de tren (5) + índice + fecha.
+    completo: dict[tuple, list] = {}
+    for tid, seq in secuencias.items():
+        clave_tren = (tid[:5], tid[-10:])
+        if len(seq) > len(completo.get(clave_tren, [])):
+            completo[clave_tren] = seq
+
+    def contiene(largo: list, corto: list) -> bool:
+        it = iter(largo)
+        return all(sid in it for sid in corto)
+
+    indice: dict[str, int] = {}
+    enlazados = 0
+    for tid, v in viajes.items():
+        seq = secuencias[tid]
+        largo = completo.get((tid[:5], tid[-10:]), seq)
+        if contiene(largo, seq):
+            seq = largo
+        if len(seq) < 2 or not any(f"{a}-{b}" in tramos or f"{b}-{a}" in tramos for a, b in zip(seq, seq[1:])):
+            continue
+        clave = "-".join(seq)
+        if clave not in indice:
+            indice[clave] = len(trazados)
+            trazados.append(["ld/red", clave])
+        v.append(indice[clave])
+        enlazados += 1
+    print(f"  trazados por la vía: {enlazados} de {len(viajes)} viajes ({len(indice)} recorridos)", file=sys.stderr)
 
 
 def a_minutos(hhmmss: str) -> int | None:

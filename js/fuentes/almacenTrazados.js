@@ -1,8 +1,12 @@
 /**
  * almacenTrazados.js
  * ---------------------------------------------------------------
- * Carga bajo demanda los trazados de las vías (data/trazados/…), un
- * archivo por núcleo, y los guarda ya preparados para reutilizarlos.
+ * Carga bajo demanda los trazados de las vías (data/trazados/…): un
+ * archivo por núcleo de Cercanías y la red de larga distancia
+ * (ld/red.json). Los guarda ya preparados para reutilizarlos.
+ *
+ * Todas las fuentes comparten la misma instancia (AlmacenTrazados.compartido())
+ * para no descargar ni preparar dos veces el mismo archivo.
  *
  * `obtener` nunca espera: si el archivo aún no está, devuelve null,
  * lanza la descarga y el tren se mueve en línea recta hasta que llegue
@@ -13,7 +17,15 @@ import { CONFIG } from '../config.js';
 import { pedirJson } from '../utilidades/red.js';
 import { trazadoDesdeArchivo } from '../modulos/trazados.js';
 
+let instanciaCompartida = null;
+
 export class AlmacenTrazados {
+  /** Instancia común a todas las fuentes */
+  static compartido() {
+    if (!instanciaCompartida) instanciaCompartida = new AlmacenTrazados();
+    return instanciaCompartida;
+  }
+
   constructor({ carpeta = CONFIG.trazados?.carpeta } = {}) {
     this.carpeta = carpeta;
     this.activo = Boolean(CONFIG.trazados?.activos && carpeta);

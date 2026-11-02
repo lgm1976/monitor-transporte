@@ -14,13 +14,22 @@ import { describirRetraso } from './estado.js';
 /** Diccionario vacío: la app sigue funcionando, solo que con códigos */
 const VACIO = { lineas: [], estaciones: {}, viajes: {}, trazados: [] };
 
+/** "madrid" → "cercanias/madrid" (los de Cercanías se guardan sin carpeta) */
+export function rutaTrazado(archivo) {
+  return archivo.includes('/') ? archivo : `cercanias/${archivo}`;
+}
+
 export class Diccionario {
   /** @param {object} datos contenido de un JSON de data/diccionarios */
   constructor(datos = VACIO, { servicioPorDefecto = '' } = {}) {
     this.lineas = datos.lineas || [];
     this.estaciones = datos.estaciones || {};
     this.viajes = datos.viajes || {};
-    /** [[archivo, shape_id], ...]: trazado de la vía de cada viaje (Cercanías) */
+    /**
+     * [[archivo, id], ...]: trazado de la vía de cada viaje. En Cercanías el
+     * archivo es el núcleo ("madrid") y el id el shape_id; en larga
+     * distancia, "ld/red" y la lista de paradas ("60000-04040-71801").
+     */
     this.trazados = datos.trazados || [];
     this.generado = datos.generado || null;
     this.servicioPorDefecto = servicioPorDefecto;
@@ -46,7 +55,7 @@ export class Diccionario {
       destino: this.estacion(destino),
       salida: salida || null,
       llegada: llegada || null,
-      trazado: archivo && idTrazado ? { archivo, id: idTrazado } : null,
+      trazado: archivo && idTrazado ? { archivo: rutaTrazado(archivo), id: idTrazado } : null,
     };
   }
 }

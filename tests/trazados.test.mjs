@@ -8,6 +8,8 @@ import { readFileSync } from 'node:fs';
 import {
   decodificarPolilinea, prepararTrazado, proyectarEnTrazado, puntoEnDistancia,
   posicionEnTramoVia, trazadoDesdeArchivo,
+  trazadoDesdeRed,
+  puntosTramo,
 } from '../js/modulos/trazados.js';
 import { Diccionario, enriquecerVehiculo } from '../js/modulos/diccionario.js';
 
@@ -82,10 +84,14 @@ test('el diccionario da la referencia del trazado de cada viaje', () => {
     viajes: { A: [0, '1', '2', '10:00', '11:00', 0], B: [0, '1', '2', '10:00', '11:00'] },
     trazados: [['madrid', '10_C4a']],
   }, { servicioPorDefecto: 'Cercanías' });
-  assert.deepEqual(dicc.viaje('A').trazado, { archivo: 'madrid', id: '10_C4a' });
+  // Los de Cercanías se guardan sin carpeta: la ruta se completa
+  assert.deepEqual(dicc.viaje('A').trazado, { archivo: 'cercanias/madrid', id: '10_C4a' });
   assert.equal(dicc.viaje('B').trazado, null);
   const v = enriquecerVehiculo({ id: 'x', tripId: 'A', etiqueta: 'C4-1' }, dicc);
-  assert.deepEqual(v.trazadoRef, { archivo: 'madrid', id: '10_C4a' });
+  assert.deepEqual(v.trazadoRef, { archivo: 'cercanias/madrid', id: '10_C4a' });
+  // Los de larga distancia ya llevan su carpeta
+  const ld = new Diccionario({ lineas: [['AVE', '', '', 'AVE']], estaciones: {}, viajes: { X: [0, '1', '2', '', '', 0] }, trazados: [['ld/red', '1-2']] });
+  assert.deepEqual(ld.viaje('X').trazado, { archivo: 'ld/red', id: '1-2' });
 });
 
 test('el trazado real de la C4a va de Parla a Alcobendas', () => {
@@ -96,4 +102,92 @@ test('el trazado real de la C4a va de Parla a Alcobendas', () => {
   // Nuevos Ministerios queda sobre la vía
   const nm = proyectarEnTrazado(c4, 40.4459, -3.6925);
   assert.ok(nm && nm.distanciaM < 150, `a ${nm?.distanciaM} m`);
+});
+
+/* ---------------------------------------------------------------
+ * Red de larga distancia (OpenStreetMap)
+ * --------------------------------------------------------------- */
+
+// Red mínima: A —1— B —2— C, con el segmento 2 guardado de C a B
+const redMini = {
+  precision: 5,
+  segmentos: [
+    codificar([[40.0, -3.0], [40.0, -2.99], [40.01, -2.98]]), // A → B
+    codificar([[40.03, -2.95], [40.02, -2.97], [40.01, -2.98]]), // C → B
+  ],
+  tramos: { 'A-B': '1', 'C-B': '2' },
+  estaciones: { A: [40.0, -3.0], B: [40.01, -2.98], C: [40.03, -2.95], D: [40.1, -2.9] },
+};
+
+/** Codificación de polilíneas (la inversa de decodificarPolilinea), para las pruebas */
+function codificar(puntos) {
+  let salida = '';
+  let pLat = 0;
+  let pLon = 0;
+  for (const [lat, lon] of puntos) {
+    const iLat = Math.round(lat * 1e5);
+    const iLon = Math.round(lon * 1e5);
+    for (let v of [iLat - pLat, iLon - pLon]) {
+      v = v < 0 ? ~(v << 1) : v << 1;
+      while (v >= 0x20) {
+        salida += String.fromCharCode((0x20 | (v & 0x1f)) + 63);
+        v >>= 5;
+      }
+      salida += String.fromCharCode(v + 63);
+    }
+    pLat = iLat;
+    pLon = iLon;
+  }
+  return salida;
+}
+
+test('un tramo de la red se lee en los dos sentidos', () => {
+  const ida = puntosTramo(redMini, 'A', 'B');
+  const vuelta = puntosTramo(redMini, 'B', 'A');
+  assert.deepEqual(ida[0], [40, -3]);
+  assert.deepEqual(vuelta[0], [40.01, -2.98]);
+  assert.deepEqual([...vuelta].reverse(), ida);
+  // Guardado de C a B: de B a C hay que invertir el segmento
+  assert.deepEqual(puntosTramo(redMini, 'B', 'C').at(-1), [40.03, -2.95]);
+  assert.equal(puntosTramo(redMini, 'A', 'C'), null);
+});
+
+test('el trazado de un viaje encadena sus tramos sin repetir puntos', () => {
+  const t = trazadoDesdeArchivo(redMini, 'A-B-C');
+  assert.equal(t.lat.length, 5); // 3 + 3 − el punto común en B
+  assert.equal(t.lat[0], 40);
+  assert.equal(t.lat[4], 40.03);
+  // Avanza siempre: la distancia acumulada crece
+  for (let i = 1; i < t.s.length; i++) assert.ok(t.s[i] > t.s[i - 1]);
+  // Un punto a mitad del segundo tramo cae sobre la vía
+  const p = proyectarEnTrazado(t, 40.02, -2.97);
+  assert.ok(p.distanciaM < 1 && p.s > t.s[2]);
+});
+
+test('lo que falta en la red se une en línea recta; sin ningún tramo, null', () => {
+  const t = trazadoDesdeRed(redMini, 'A-B-C-D');
+  assert.equal(t.lat.at(-1), 40.1); // de C a D en recta
+  assert.equal(trazadoDesdeRed(redMini, 'C-D'), null);
+  assert.equal(trazadoDesdeRed(redMini, 'A-Z'), null); // estación desconocida
+  assert.equal(trazadoDesdeRed(redMini, 'A'), null);
+});
+
+test('la red real lleva el AVE de Madrid a Barcelona por la vía', () => {
+  const url = new URL('../data/trazados/ld/red.json', import.meta.url);
+  let red;
+  try {
+    red = JSON.parse(readFileSync(url));
+  } catch {
+    return; // la red se genera aparte (generar_trazados_osm.py)
+  }
+  // Madrid-Puerta de Atocha → Zaragoza-Delicias → Barcelona-Sants
+  const t = trazadoDesdeRed(red, '60000-04040-71801');
+  assert.ok(t, 'hay trazado');
+  assert.ok(t.longitud > 590000 && t.longitud < 680000, `longitud ${Math.round(t.longitud / 1000)} km`);
+  // La estación de Calatayud (por donde pasa sin parar) y una posición real
+  // de un tren de Renfe junto a Lleida (02/11/2026) quedan sobre la vía
+  for (const [lat, lon] of [red.estaciones['70600'], [41.564774, 0.69700384]]) {
+    const p = proyectarEnTrazado(t, lat, lon);
+    assert.ok(p && p.distanciaM < 300, `a ${p?.distanciaM} m de ${lat},${lon}`);
+  }
 });

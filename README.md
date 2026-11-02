@@ -5,7 +5,7 @@ Aplicación web estática que muestra en un mapa interactivo la posición y la p
 - HTML + JavaScript vanilla (módulos ES), **Tailwind CSS** y **Leaflet**
 - **Modo simulado** con trenes que se mueven, para validar la interfaz sin depender de ninguna API
 - **Modo real** con varias fuentes en paralelo, retrasos cruzados desde TripUpdates y soporte protobuf bajo demanda
-- **Trenes de Cercanías por la vía**: se deslizan siguiendo el trazado de la línea, con la flecha en su sentido de marcha
+- **Trenes por la vía**: Cercanías con el trazado de Renfe; AVE, larga y media distancia y OUIGO con las vías de OpenStreetMap. Se deslizan por las curvas con la flecha en su sentido de marcha
 - **Filtros por servicio y núcleo**, **seguir un tren** y **enlace para compartirlo**
 - **Trenes OUIGO según horario** (OUIGO no publica datos en tiempo real)
 - **Próximo tren** entre dos estaciones de Cercanías, con cuenta atrás y retraso en vivo
@@ -25,7 +25,7 @@ js/
     filtros.js             Servicio/núcleo, clave del tren, URL y resumen (puro, testeable)
     horario.js             Posición estimada según horario (puro, testeable)
     trayectos.js           Próximos trenes de una estación a otra (puro, testeable)
-    trazados.js            Trazados de vía: proyección y avance por la vía (puro, testeable)
+    trazados.js            Trazados de vía: proyección, avance y red de larga distancia (puro, testeable)
     panelTrayecto.js       Pestaña «Próximo tren» del panel
     normalizador.js        GTFS-RT → modelo interno (puro, testeable)
     mapa.js                Leaflet: marcadores, movimiento continuo, fichas, leyenda
@@ -34,7 +34,7 @@ js/
     fuenteMock.js          Datos simulados con movimiento
     fuenteGtfsRt.js        Feeds reales (varias fuentes en paralelo)
     fuenteHorario.js       Trenes según horario (OUIGO), en los dos modos
-    almacenTrazados.js     Carga bajo demanda los trazados de cada núcleo
+    almacenTrazados.js     Carga bajo demanda los trazados (común a todas las fuentes)
   utilidades/
     red.js                 fetch con timeout, proxy CORS y protobuf
     geo.js                 Distancia, rumbo e interpolación (puro, testeable)
@@ -49,12 +49,15 @@ data/
     cercanias/             Todas las paradas de cada tren, un archivo por núcleo
       indice.json, madrid.json, rodalies-de-catalunya.json…
   trazados/cercanias/      Trazado de las vías de cada línea, un archivo por núcleo
+  trazados/ld/red.json     Vías de larga distancia y OUIGO (OpenStreetMap)
 scripts/
   generar_diccionarios.py  Descarga el GTFS estático de Renfe y crea los diccionarios,
                            los horarios completos y los trazados de Cercanías por núcleo
   generar_horarios.py      Descarga el horario de OUIGO y crea data/horarios/ouigo.json
+  generar_trazados_osm.py  Descarga las vías de OpenStreetMap y calcula el camino por la
+                           vía entre cada par de estaciones de AV/LD/MD y OUIGO
 .github/workflows/
-  diccionarios.yml         Ejecuta los dos scripts cada noche y sube los cambios
+  diccionarios.yml         Ejecuta los scripts cada noche (el de OSM, los lunes) y sube los cambios
 proxy/
   cloudflare-worker.js     Proxy CORS opcional con lista blanca
 tests/                     Pruebas con `node --test`
@@ -156,6 +159,31 @@ En el modo simulado, los trenes C4 y R1 avanzan por el trazado real de la C4a y 
 
 Se ajusta en `CONFIG.trazados` (`activos: false` vuelve a la línea recta en todos los trenes).
 
+### Por la vía (larga distancia y OUIGO)
+
+Los GTFS de AV/LD/MD y de OUIGO no traen trazados, así que salen de **OpenStreetMap** (© colaboradores de OpenStreetMap, licencia ODbL):
+
+- `scripts/generar_trazados_osm.py` descarga de Overpass las vías de la Península (`railway=rail` y `narrow_gauge`, sin playas de vías ni ramales industriales), por teselas de 2° × 2° porque Overpass rechaza las consultas grandes cuando está cargado.
+- Con ellas monta el grafo de la red y busca el camino (A*) entre **cada par de estaciones consecutivas** de algún viaje: 1.423 pares, 1.403 con camino. Cada tipo de tren prefiere su ancho: estándar para AVE, Avlo, Avant y OUIGO; ibérico (o métrico, si es el único que llega) para Media Distancia y Regionales; cualquiera para Alvia, Intercity y Euromed. Los apartaderos y las variantes solo de mercancías cuestan más, y para la alta velocidad se prefieren las vías `highspeed=yes`.
+- Las estaciones que caen en mitad de una vía sin desvíos parten la vía en su punto más cercano, y los apeaderos a menos de 1,5 km no se confunden entre sí.
+- Los caminos se guardan como **segmentos de vía compartidos** (cada trozo una vez, aunque lo usen cien trenes) simplificados a 10 m, más la lista de segmentos de cada tramo: `data/trazados/ld/red.json`, 220 KB (140 KB comprimidos). No lleva fecha: solo cambia si cambian las vías.
+- El diccionario `ld.json` da a cada viaje su recorrido como lista de paradas (`60000-04040-71801`) y la web encadena los tramos. Renfe parte un mismo tren en varios viajes solapados (Vigo → Barcelona, León → Barcelona, Zaragoza → Lleida…) y el feed da la misma posición en todos, así que cada viaje usa el recorrido **completo** de su tren.
+- Lo que falta (Murcia–Lorca–Águilas, Almería, Xàtiva–Alcoi, el tramo francés de los AVE a Francia y algún tren turístico) se une en línea recta.
+
+En los trenes en vivo funciona igual que en Cercanías: cada posición se proyecta sobre la vía y el tren se desliza por ella. Comprobado el 02/11/2026 con el feed real: las posiciones de Renfe quedan a 2 m de mediana de las vías de OSM (p90 9 m); en 60 s de seguimiento en el navegador, el p95 de la separación de los trenes de larga distancia a la vía bajó de 45 m a 8 m.
+
+Los **OUIGO según horario** avanzan por la vía a velocidad constante dentro de cada tramo, en lugar de en línea recta entre estaciones que están a cientos de kilómetros: antes iban a más de 1,5 km de la vía; ahora, sobre ella.
+
+**Actualización.** La Action lo ejecuta los lunes antes de los diccionarios; también a mano con **Run workflow** marcando «Rehacer también la red de vías». Si Overpass falla, se queda la red de la semana anterior. En local:
+
+```bash
+python3 scripts/generar_trazados_osm.py                      # descarga de Overpass (~20 min)
+python3 scripts/generar_trazados_osm.py --osm _osm/t_*.json.gz  # teselas ya descargadas
+python3 scripts/generar_diccionarios.py                      # enlaza cada viaje con su recorrido
+```
+
+En el modo simulado, el AVE Madrid → Barcelona y el Media Distancia Sevilla → Málaga avanzan por la red de OSM.
+
 ## De códigos a información legible
 
 El feed en tiempo real solo trae identificadores (`3004D18779C3`, parada `51003`, etiqueta `C3-18779-PLATF.(2)`). La app los traduce con unos diccionarios generados a partir del **GTFS estático** de Renfe, de modo que cada tren se muestra como:
@@ -237,7 +265,7 @@ Los feeds en tiempo real son de Renfe y solo traen trenes de Renfe. **OUIGO no p
 
 Con ese horario la app **estima** dónde debería ir cada OUIGO ahora:
 
-- Entre dos estaciones avanza en línea recta a velocidad constante (el horario no trae el trazado de la vía). En una estación se queda parado de la llegada a la salida.
+- Entre dos estaciones avanza **por la vía** a velocidad constante (con las vías de OpenStreetMap, ver «Por la vía (larga distancia y OUIGO)»); si falta el tramo, en línea recta. En una estación se queda parado de la llegada a la salida.
 - Marcador distinto: color de OUIGO, semitransparente y con **borde discontinuo**. En la leyenda: «Según horario (sin datos en vivo)».
 - Estado «Sin datos» y texto «Según horario · sin datos en vivo». La ficha explica que, si lleva retraso, no lo sabemos. No cuentan en el porcentaje de puntualidad.
 - Funcionan como cualquier tren: filtro de servicio «OUIGO», buscador, seguir y enlace (`?tren=6610`).
@@ -284,28 +312,21 @@ con `css/tailwind-entrada.css` conteniendo las tres directivas `@tailwind base; 
 
 Usa las teselas estándar de OpenStreetMap, que no piden clave pero están pensadas para tráfico ligero (consulta su política de uso). Si el proyecto gana visitas, cambia `CONFIG.mapa.teselas` por un proveedor con clave gratuita (MapTiler, Stadia Maps, Thunderforest). Los estilos de CARTO ahora exigen clave y muestran una marca de agua sin ella.
 
-## Plan: que los trenes vayan siempre por las vías (fase 1 hecha)
+## Plan: que los trenes vayan siempre por las vías (fases 1 y 2 hechas)
 
-Diagnóstico del 01/11/2026. Los trenes se salen de la vía por tres motivos:
+Diagnóstico del 01/11/2026. Los trenes se salían de la vía por tres motivos:
 
-1. **Animación en línea recta** entre dos posiciones del feed (15-20 s, unos 500 m): en las curvas recorta por fuera. **Resuelto en Cercanías.**
-2. **OUIGO según horario**: va en línea recta entre estaciones que están a cientos de kilómetros (Madrid → Zaragoza), así que puede ir muy lejos de la vía.
-3. **Posiciones GPS de Renfe**: se temía que trajeran error propio, pero en Cercanías no: caen exactamente sobre el trazado de Renfe (comprobado el 02/11/2026).
+1. **Animación en línea recta** entre dos posiciones del feed (15-20 s, unos 500 m): en las curvas recortaba por fuera. **Resuelto en Cercanías (fase 1) y en larga distancia (fase 2).**
+2. **OUIGO según horario**: iba en línea recta entre estaciones a cientos de kilómetros. **Resuelto (fase 2).**
+3. **Posiciones GPS de Renfe**: no traen error propio. En Cercanías caen exactamente sobre el trazado de Renfe; en larga distancia, a 2 m de mediana de las vías de OSM (comprobado el 02/11/2026).
 
-Datos disponibles:
+Fases:
 
-- **Cercanías**: el GTFS de Renfe trae `shapes.txt` con el trazado de cada línea y `shape_id` en cada viaje. Ya en uso.
-- **AV/LD/MD y OUIGO**: sus GTFS **no traen trazados**. Habría que sacarlos de OpenStreetMap (vías `railway=rail` vía Overpass, licencia ODbL, atribución «© OpenStreetMap»): construir el grafo de vías y precalcular el camino entre cada par de estaciones consecutivas de los viajes, simplificado. Se haría en un script aparte, ejecutado de vez en cuando (las vías no cambian a diario).
-
-Plan por fases:
-
-1. **Cercanías. Hecha el 02/11/2026** (ver «Por la vía (Cercanías)»). El trazado de cada viaje se añadió solo al diccionario, que es lo que usa el mapa; los horarios de «Próximo tren» comparten `trip_id` con él, así que no hizo falta duplicarlo.
-2. **Larga distancia y OUIGO (siguiente).** Script `generar_trazados_osm.py` con Overpass → caminos estación a estación. Los OUIGO según horario avanzarían por la vía con velocidad constante en cada tramo.
+1. **Cercanías. Hecha el 02/11/2026** con `shapes.txt` de Renfe (ver «Por la vía (Cercanías)»).
+2. **Larga distancia y OUIGO. Hecha el 02/11/2026** con OpenStreetMap (ver «Por la vía (larga distancia y OUIGO)»).
 3. Opcional: dibujar el trazado de la línea del tren seguido.
 
 Si un tren no tiene trazado, o su posición está lejos de la vía (desvíos, datos erróneos), se mantiene el movimiento en línea recta.
-
-Para la fase 2 ya está la base: `js/modulos/trazados.js` (proyección, punto a una distancia, tramos por la vía) y `AlmacenTrazados` sirven para cualquier trazado con el mismo formato de archivo. Bastaría con generar `data/trazados/ld/…` con los caminos estación a estación, añadir su referencia en `ld.json` y `ouigo.json`, y en `horario.js` avanzar por distancia dentro de cada tramo en vez de en línea recta.
 
 ## Próximos pasos sugeridos
 
@@ -313,7 +334,8 @@ Para la fase 2 ya está la base: `js/modulos/trazados.js` (proyección, punto a 
 - Arrancar centrado en la zona del usuario (con permiso de ubicación).
 - Panel de estación con próximas llegadas y favoritos («mi C-4 de cada mañana»).
 - Ofrecer el transbordo también cuando llega antes que el directo; dos transbordos; Media Distancia.
-- Dibujar el trazado de la línea del tren seguido (los datos ya están en `data/trazados`).
+- Dibujar el trazado de la línea del tren seguido (fase 3; los datos ya están en `data/trazados`).
+- Mostrar un solo marcador por tren en larga distancia: Renfe envía la misma posición en cada viaje solapado del mismo tren (Vigo → Barcelona, León → Barcelona…).
 - Capa de avisos de servicio (`Alert` de GTFS-RT).
 - Filtro por operador cuando haya fuentes de otros operadores.
 - Ficha deslizable desde abajo en el móvil también para el listado.

@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 
 import { momentoMadrid, minutosAHora, situarViaje, vehiculosSegunHorario, horarioCaducado } from '../js/modulos/horario.js';
 import { buscarTren, pasaAmbito } from '../js/modulos/filtros.js';
+import { prepararTrazado, puntoEnDistancia } from '../js/modulos/trazados.js';
 
 // Madrid (0) → Córdoba (1) → Sevilla (2), 10:00 – 11:42 (parada 11:42?) – ver tiempos
 const estaciones = [
@@ -78,4 +79,38 @@ test('viaje de ayer que cruza la medianoche', () => {
 test('horario caducado', () => {
   assert.equal(horarioCaducado(datos, enMadrid('10:00', '2026-12-12')), null);
   assert.equal(horarioCaducado(datos, enMadrid('10:00', '2026-12-13')), '2026-12-12');
+});
+
+test('por la vía: avanza a lo largo del trazado de cada tramo', () => {
+  // Vía de Madrid a Córdoba con un rodeo hacia el este (no en línea recta)
+  const viaMC = prepararTrazado([[40.4, -3.7], [39.0, -3.0], [37.9, -4.8]], '60000-50500');
+  const via = (a, b) => {
+    if (a === '60000' && b === '50500') return viaMC;
+    return null; // Córdoba → Sevilla sin trazado: línea recta
+  };
+  // A mitad de tiempo, a mitad de la vía (no a mitad de la recta)
+  const mitad = situarViaje(puntos, estaciones, 650, via);
+  const esperado = puntoEnDistancia(viaMC, viaMC.longitud / 2);
+  assert.equal(mitad.porVia, true);
+  assert.ok(Math.abs(mitad.lat - esperado.lat) < 1e-9 && Math.abs(mitad.lon - esperado.lon) < 1e-9);
+  assert.ok(Math.abs(mitad.lon - -4.25) > 0.3, 'lejos de la línea recta');
+  // Al salir de Madrid ya mira hacia donde va la vía (sureste), no a Córdoba
+  const salida = situarViaje(puntos, estaciones, 600, via);
+  assert.equal(salida.porVia, true);
+  assert.ok(salida.rumbo > 90 && salida.rumbo < 180, `rumbo ${salida.rumbo}`);
+  // Parado en Córdoba: al final de la vía del tramo anterior
+  const enCordoba = situarViaje(puntos, estaciones, 701, via);
+  assert.equal(enCordoba.lat, 37.9);
+  // Córdoba → Sevilla no tiene trazado: en línea recta como siempre
+  const sinVia = situarViaje(puntos, estaciones, 724, via);
+  assert.equal(sinVia.porVia, false);
+  assert.deepEqual([sinVia.lat, sinVia.lon], [situarViaje(puntos, estaciones, 724).lat, situarViaje(puntos, estaciones, 724).lon]);
+});
+
+test('por la vía: el vehículo lleva la referencia del recorrido completo', () => {
+  const via = () => prepararTrazado([[40.4, -3.7], [37.9, -4.8]], 'x');
+  const [v] = vehiculosSegunHorario(datos, enMadrid('10:50'), { idFuente: 'ouigo', via, red: 'ld/red' });
+  assert.deepEqual(v.trazadoRef, { archivo: 'ld/red', id: '60000-50500-51003' });
+  const [sin] = vehiculosSegunHorario(datos, enMadrid('10:50'), { idFuente: 'ouigo' });
+  assert.equal(sin.trazadoRef, null);
 });

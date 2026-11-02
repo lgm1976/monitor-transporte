@@ -185,6 +185,7 @@ export function posicionEnTramoVia(tramo, ahoraMs) {
  * @returns {object|null} trazado preparado o null si no existe
  */
 export function trazadoDesdeArchivo(archivo, id) {
+  if (archivo?.tramos) return trazadoDesdeRed(archivo, id);
   const formas = archivo?.trazados || {};
   const precision = archivo?.precision ?? 5;
   if (formas[id]) return prepararTrazado(decodificarPolilinea(formas[id], precision), id);
@@ -192,4 +193,88 @@ export function trazadoDesdeArchivo(archivo, id) {
     return prepararTrazado(decodificarPolilinea(formas[id.slice(0, -4)], precision).reverse(), id);
   }
   return null;
+}
+
+/* ---------------------------------------------------------------
+ * Red de larga distancia (data/trazados/ld/red.json)
+ * ---------------------------------------------------------------
+ * Generada con OpenStreetMap por scripts/generar_trazados_osm.py:
+ *   segmentos  [polilínea, ...]            trozos de vía compartidos
+ *   tramos     {"A-B": "3,-7,12"}          camino entre dos estaciones
+ *                                          (1 = primer segmento; − = al revés)
+ *   estaciones {código: [lat, lon]}        para unir lo que falte en recta
+ * El id de un trazado es la lista de paradas: "60000-04040-71801".
+ */
+
+/** Segmentos decodificados de cada archivo de red (se decodifican una vez) */
+const cacheSegmentos = new WeakMap();
+
+function segmentoDecodificado(red, indice) {
+  let cache = cacheSegmentos.get(red);
+  if (!cache) cacheSegmentos.set(red, (cache = new Map()));
+  if (!cache.has(indice)) {
+    const texto = red.segmentos?.[indice];
+    cache.set(indice, texto ? decodificarPolilinea(texto, red.precision ?? 5) : null);
+  }
+  return cache.get(indice);
+}
+
+/**
+ * Puntos del camino por la vía de la estación a a la b (en ese sentido),
+ * o null si la red no tiene ese tramo.
+ * @returns {Array<[number, number]>|null}
+ */
+export function puntosTramo(red, a, b) {
+  let lista = red?.tramos?.[`${a}-${b}`];
+  let invertir = false;
+  if (lista === undefined) {
+    lista = red?.tramos?.[`${b}-${a}`];
+    invertir = true;
+  }
+  if (!lista) return null;
+  const puntos = [];
+  for (const firmado of String(lista).split(',').map(Number)) {
+    const seg = segmentoDecodificado(red, Math.abs(firmado) - 1);
+    if (!seg) return null;
+    const trozo = firmado < 0 ? [...seg].reverse() : seg;
+    // El primer punto de cada segmento repite el último del anterior
+    puntos.push(...(puntos.length ? trozo.slice(1) : trozo));
+  }
+  return invertir ? puntos.reverse() : puntos;
+}
+
+/**
+ * Trazado de un viaje encadenando los tramos entre sus paradas. Los
+ * tramos que falten se unen en línea recta entre las dos estaciones.
+ * También sirve para un solo tramo ("A-B").
+ *
+ * @param {object} red contenido de data/trazados/ld/red.json
+ * @param {string} id paradas separadas por guiones
+ * @returns {object|null} trazado preparado, o null si no hay ningún tramo
+ *          por la vía (en ese caso la línea recta de siempre ya vale)
+ */
+export function trazadoDesdeRed(red, id) {
+  const paradas = String(id).split('-').filter(Boolean);
+  if (paradas.length < 2) return null;
+  const puntos = [];
+  let porVia = 0;
+  const anadir = (lista) => {
+    const ultimo = puntos[puntos.length - 1];
+    const primero = lista[0];
+    const repetido = ultimo && primero && ultimo[0] === primero[0] && ultimo[1] === primero[1];
+    puntos.push(...(repetido ? lista.slice(1) : lista));
+  };
+  for (let i = 0; i < paradas.length - 1; i++) {
+    const tramo = puntosTramo(red, paradas[i], paradas[i + 1]);
+    if (tramo?.length >= 2) {
+      anadir(tramo);
+      porVia++;
+      continue;
+    }
+    const a = red?.estaciones?.[paradas[i]];
+    const b = red?.estaciones?.[paradas[i + 1]];
+    if (!a || !b) return null; // sin coordenadas no se puede encadenar
+    anadir([a, b]);
+  }
+  return porVia ? prepararTrazado(puntos, id) : null;
 }
