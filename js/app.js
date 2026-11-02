@@ -26,6 +26,7 @@ import { PanelTrayecto } from './modulos/panelTrayecto.js';
 import { PanelEstacion } from './modulos/panelEstacion.js';
 import { PanelFavoritos } from './modulos/panelFavoritos.js';
 import { PanelAvisos } from './modulos/panelAvisos.js';
+import { PanelInfo } from './modulos/panelInfo.js';
 import { indexarPorLinea, avisosDeTren } from './modulos/avisos.js';
 import { Favoritos } from './modulos/estacion.js';
 import { CapaEstaciones } from './modulos/capaEstaciones.js';
@@ -583,7 +584,7 @@ function conectarControles() {
 
   // Escape deja de seguir
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && app.seguido && !document.querySelector('.leaflet-popup')) dejarDeSeguir();
+    if (e.key === 'Escape' && app.seguido && !document.querySelector('.leaflet-popup, dialog[open]')) dejarDeSeguir();
   });
 
   // Sin pestaña visible no se consume red; al volver se refresca al momento
@@ -668,6 +669,10 @@ async function iniciar() {
 
   conectarControles();
   pintarPausa();
+  // Información y novedades: si el archivo no carga, el botón no aparece
+  pedirJson(CONFIG.rutaNovedades)
+    .then((datos) => (app.info = new PanelInfo({ datos, almacen: almacenLocal() })))
+    .catch((error) => console.warn('Novedades no disponibles:', error.message));
   // En móvil se arranca con el mapa a la vista y el listado plegado
   if (window.matchMedia('(max-width: 767px)').matches) {
     document.body.dataset.panel = 'cerrado';

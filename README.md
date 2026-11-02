@@ -6,11 +6,13 @@ Aplicación web estática que muestra en un mapa interactivo la posición y la p
 - **Modo simulado** con trenes que se mueven, para validar la interfaz sin depender de ninguna API
 - **Modo real** con varias fuentes en paralelo, retrasos cruzados desde TripUpdates y soporte protobuf bajo demanda
 - **Trenes por la vía**: Cercanías con el trazado de Renfe; AVE, larga y media distancia y OUIGO con las vías de OpenStreetMap. Se deslizan por las curvas con la flecha en su sentido de marcha
+- **Grupos de trenes** con el mapa alejado: un círculo con el número de trenes y un anillo con sus estados; tocarlo acerca el mapa
 - **Filtros por servicio y núcleo**, **seguir un tren** (con su **recorrido completo** y sus paradas) y **enlace para compartirlo**
 - **Trenes OUIGO según horario** (OUIGO no publica datos en tiempo real)
 - **Próximo tren** entre dos estaciones de Cercanías, con cuenta atrás y retraso en vivo
 - **Panel de estación** (próximos trenes en los dos sentidos) y **favoritos** de estaciones y trayectos; las estaciones de Cercanías se ven en el mapa al acercarse
 - **Avisos de servicio** de Renfe Cercanías (incidencias, obras y accesibilidad) en su pestaña, en la ficha de cada tren y en el panel de estación
+- **Información y novedades**: botón de la cabecera con la descripción del proyecto y lo nuevo de cada versión (versión actual: **1.8**)
 - Colores y umbrales de retraso definidos en `data/estilo_mapa.json`
 
 ## Estructura
@@ -39,6 +41,9 @@ js/
     capaEstaciones.js      Estaciones de Cercanías en el mapa
     normalizador.js        GTFS-RT → modelo interno (puro, testeable)
     solapados.js           Un marcador por tren aunque el feed lo repita en varios viajes (puro, testeable)
+    agrupacion.js          Grupos de trenes cercanos con el mapa alejado (puro, testeable)
+    novedades.js           Versiones, novedades sin ver y validación de novedades.json (puro, testeable)
+    panelInfo.js           Ventana «Información» (el proyecto y novedades)
     mapa.js                Leaflet: marcadores, movimiento continuo, fichas, leyenda
     panel.js               Selectores de servicio y núcleo, contadores-filtro, buscador y listado
   fuentes/
@@ -54,6 +59,7 @@ js/
     geo.js                 Distancia, rumbo e interpolación (puro, testeable)
 data/
   estilo_mapa.json         Colores del tema y umbrales de retraso
+  novedades.json           Descripción del proyecto y novedades de cada versión (ventana «Información»)
   mock_gtfs_rt.json        Feed de ejemplo para el modo simulado
   mock_alerts.json         Avisos inventados para el modo simulado
   gtfs-realtime.proto      Esquema GTFS-RT (subconjunto) para binarios
@@ -271,6 +277,54 @@ La URL refleja siempre el estado, así que también se pueden guardar vistas en 
 | `red` + `estacion` | `madrid`, `18000` | Abre «Estación» con esa estación |
 
 En el modo simulado los trenes C4 y R1 tienen núcleo (Madrid y Rodalies de Catalunya) para poder probar el filtro: en `data/diccionarios/mock.json` el grupo de la línea se escribe «Cercanías Madrid».
+
+## Información y novedades
+
+Botón **«Información»** de la cabecera (desde la versión 1.8, 02/11/2026). Abre una ventana con dos pestañas:
+
+- **El proyecto**: qué es la web, qué se puede hacer, de dónde salen los datos y qué tener en cuenta (posiciones aproximadas, OUIGO sin tiempo real, proyecto personal sin relación con Renfe).
+- **Novedades**: las mejoras de cada versión, la más reciente primero, con su fecha.
+
+El botón lleva un **punto ámbar** si hay una versión que el usuario no ha visto (o si nunca ha abierto la ventana). Al abrirla con una versión nueva, se abre en «Novedades» con las versiones nuevas marcadas («Nuevo»). La última versión vista se guarda en el navegador (`localStorage`, clave `monitor.novedadesVistas`); sin almacenamiento, el punto sale siempre. En el móvil la ventana sube desde abajo. Se cierra con la ✕, con Escape o tocando fuera.
+
+Todo el texto está en `data/novedades.json`; la ventana (`js/modulos/panelInfo.js`) solo lo pinta. Si el archivo no carga, el botón no aparece y la web sigue funcionando.
+
+### Mantenimiento (cada mejora funcional)
+
+Cada mejora que se note al usar la web **sube la versión y añade su entrada** en `data/novedades.json` en el mismo commit:
+
+1. Añadir la versión **al principio** de `versiones`: siguiente número (`1.8` → `1.9`; `2.0` para un cambio grande), fecha `AAAA-MM-DD`, título corto y de dos a cuatro cambios.
+2. Escribir para quien usa la web, no para quien la programa: qué puede hacer ahora y dónde, sin nombres de archivos, módulos ni parámetros. Frases completas, sin guiones largos.
+3. Varias mejoras del mismo día pueden ir en la misma versión si se publican juntas.
+4. Si la mejora cambia lo que la web hace o de dónde saca los datos, revisar también `proyecto` (apartados «Qué puedes hacer», «De dónde salen los datos», «Ten en cuenta»).
+5. Actualizar la versión actual en la lista de funciones del principio de este README.
+6. `node --test` valida el archivo (`tests/novedades.test.mjs`): orden de versiones, fechas, campos vacíos.
+
+Las correcciones internas, los cambios de datos (la Action nocturna) y las mejoras que no cambian lo que se ve no llevan versión.
+
+Historial reconstruido a partir de los commits: 1.0 a 1.3 el 01/11/2026 (primera versión, fichas legibles y movimiento continuo, filtros y seguir un tren, OUIGO y «Próximo tren»), 1.4 a 1.8 el 02/11/2026 (trenes por la vía y recorrido, movimiento fluido, panel de estación y favoritos, avisos, grupos de trenes e información).
+
+## Grupos de trenes con el mapa alejado
+
+Con toda España a la vista hay más de 500 trenes en el mapa. Desde el 02/11/2026, hasta el zoom 10 los trenes cercanos se agrupan en un **círculo con su número**:
+
+- El **anillo** muestra la proporción de cada estado con los colores de la leyenda (verde puntual, ámbar leve, rojo grave…). Un grupo todo verde está al día; uno con mucho rojo, no.
+- Al pasar el ratón (o con el lector de pantalla) se lee el resumen: «14 trenes: 9 puntuales, 5 con retraso leve».
+- **Tocarlo acerca el mapa** hasta sus trenes (como poco dos niveles, o lo justo para que se separen). Con el teclado, Tab y Enter.
+- Desde el zoom 11 se ven todos los trenes sueltos, como antes.
+- **Nunca se agrupan** el tren seguido (se ve con su anillo encima de los grupos) ni el de la ficha abierta: elegir un tren del listado con el mapa alejado lo saca de su grupo hasta cerrar la ficha.
+- Los filtros mandan: los grupos solo cuentan los trenes visibles. Contadores, listado y porcentaje de puntualidad no cambian.
+
+Cómo funciona (`js/modulos/agrupacion.js`, con pruebas en `tests/agrupacion.test.mjs`):
+
+- **No usa Leaflet.markercluster.** Aquí los trenes se mueven en cada fotograma (30 por segundo) y ese plugin recoloca sus grupos con cada `setLatLng`. En su lugar, el mapa reagrupa cada segundo, al mover o acercar el mapa y con cada lectura del feed.
+- Rejilla fija de 60 px en coordenadas del mundo (no de la pantalla, así arrastrar el mapa no cambia los grupos) y después se unen las celdas vecinas cuyos centros quedan a menos de 42 px, para que los círculos no se monten. Un tren solo cambia de grupo al cruzar el borde de una celda. El resultado no depende del orden de los trenes.
+- El círculo va en el centro de sus trenes. Los trenes agrupados se quitan del mapa pero siguen moviéndose (el estimador y la animación guardan su posición), así que al separarse aparecen en su sitio.
+- Coste: 1 ms para agrupar 550 trenes. En el navegador, con datos reales, el mapa sigue a unos 58 fotogramas por segundo.
+
+Se ajusta en `CONFIG.agrupacion`: `zoomMax` (10), `radioPx` (60), `minimo` (2 trenes) e `intervaloMs` (1.000). Con `activa: false` se ven siempre todos los trenes.
+
+Comprobado el 02/11/2026 en el navegador: en simulado, dos grupos (Madrid y Barcelona) que se separan al tocarlos; con datos reales, 525 trenes en 24 grupos y 3 sueltos al ver España, el de Barcelona (117) se abre en grupos de 2 a 62 al tocarlo, un tren elegido en el listado mantiene la ficha abierta durante varios reagrupados y el tren seguido queda fuera de los grupos al alejar el mapa. Sin errores.
 
 ## Recorrido del tren seguido
 
@@ -616,7 +670,6 @@ Ajustes probados con el banco (`--ajustes`): corregir en 8, 10 o 25 s, colocar a
 ## Próximos pasos sugeridos
 
 - Movimiento fluido de los trenes: fase 4, medición y ajuste (ver el plan anterior; es lo siguiente). Grabar una serie nueva en hora punta, repetir el banco de pruebas, revisar en el navegador los trenes que aún se colocan de golpe y los que quedan parados fuera de estación, y decidir si los trenes que terminan viaje (Renfe les cambia el id) deben quitarse antes de los 3 minutos.
-- Agrupar marcadores (Leaflet.markercluster) al ver toda España con los dos feeds de Renfe.
 - Arrancar centrado en la zona del usuario (con permiso de ubicación).
 - Panel de estación también para larga distancia (necesita las horas de paso de larga distancia, más abajo) y estaciones de larga distancia en el mapa.
 - Ofrecer el transbordo también cuando llega antes que el directo; dos transbordos; Media Distancia.

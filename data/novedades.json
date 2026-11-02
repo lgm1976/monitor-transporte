@@ -1,0 +1,134 @@
+{
+  "_comentario": "Sección «Información» de la web. Cada mejora funcional añade una versión AL PRINCIPIO de «versiones» (la más reciente primero). Ver «Información y novedades» en el README.",
+  "proyecto": {
+    "resumen": "Mapa en tiempo real de los trenes de España: dónde va cada uno, si llega a su hora y cuándo pasa el próximo por tu estación.",
+    "apartados": [
+      {
+        "titulo": "Qué es",
+        "parrafos": [
+          "Una web gratuita que reúne en un mapa los datos abiertos que publica Renfe sobre sus trenes en circulación: Cercanías, AVE, Alvia, Avlo, Media Distancia y Regionales. Cada tren aparece con su línea, su recorrido y su puntualidad, y avanza por la vía casi en tiempo real."
+        ]
+      },
+      {
+        "titulo": "Qué puedes hacer",
+        "lista": [
+          "Ver todos los trenes en el mapa con un color según su puntualidad y filtrarlos por tipo de servicio o por núcleo de Cercanías.",
+          "Seguir un tren, con su recorrido y sus paradas, y mandar el enlace a quien te espera.",
+          "Consultar el próximo tren entre dos estaciones de Cercanías, también con un transbordo.",
+          "Ver los próximos trenes de una estación y guardar tus estaciones y trayectos favoritos.",
+          "Leer los avisos de servicio de Renfe Cercanías: incidencias, obras y accesibilidad."
+        ]
+      },
+      {
+        "titulo": "De dónde salen los datos",
+        "lista": [
+          "Posiciones, retrasos y avisos: datos en tiempo real de Renfe Data (GTFS Realtime).",
+          "Horarios, estaciones y líneas: horarios oficiales de Renfe, actualizados cada noche.",
+          "OUIGO: su horario publicado, porque no ofrece datos en tiempo real.",
+          "Mapa y vías: OpenStreetMap y sus colaboradores."
+        ]
+      },
+      {
+        "titulo": "Ten en cuenta",
+        "lista": [
+          "Renfe renueva las posiciones cada 15 o 20 segundos. Entre un dato y el siguiente, la web calcula por dónde va cada tren, así que su posición en el mapa es aproximada.",
+          "Los trenes OUIGO se sitúan según su horario: si llevan retraso, no lo sabemos.",
+          "Con «Ver simulados» la web muestra trenes inventados, para probarla sin datos en vivo.",
+          "Es un proyecto personal, sin relación con Renfe ni con ningún otro operador. Para decisiones importantes, consulta siempre la información oficial."
+        ]
+      }
+    ]
+  },
+  "versiones": [
+    {
+      "version": "1.8",
+      "fecha": "2026-11-02",
+      "titulo": "Grupos de trenes y sección de información",
+      "cambios": [
+        "Con el mapa alejado, los trenes cercanos se agrupan en un círculo con su número. El anillo muestra cuántos van puntuales y cuántos con retraso.",
+        "Toca un grupo para acercarte hasta sus trenes.",
+        "El tren que sigues y el de la ficha abierta se ven siempre sueltos.",
+        "Nueva sección «Información», con la descripción del proyecto y las novedades de cada versión."
+      ]
+    },
+    {
+      "version": "1.7",
+      "fecha": "2026-11-02",
+      "titulo": "Avisos de servicio",
+      "cambios": [
+        "Nueva pestaña ⚠ con las incidencias, obras y avisos de accesibilidad de Renfe Cercanías, filtrables por núcleo, tipo y línea.",
+        "La ficha del tren y el panel de estación avisan si hay incidencias en su línea o en esa estación.",
+        "Si Renfe deja de actualizar sus avisos, la web lo indica y no los marca en los trenes."
+      ]
+    },
+    {
+      "version": "1.6",
+      "fecha": "2026-11-02",
+      "titulo": "Panel de estación y favoritos",
+      "cambios": [
+        "Pestaña «Estación»: los próximos trenes que pasan por una estación de Cercanías en los dos sentidos, con su retraso en vivo y el andén.",
+        "Las estaciones de Cercanías aparecen en el mapa al acercarte; tocarlas abre su panel.",
+        "Favoritos (★) de estaciones y trayectos, con el próximo tren de cada uno de un vistazo."
+      ]
+    },
+    {
+      "version": "1.5",
+      "fecha": "2026-11-02",
+      "titulo": "Movimiento más fluido",
+      "cambios": [
+        "Los trenes avanzan sin pararse ni dar acelerones entre dato y dato: la web calcula por dónde van según su horario o su velocidad y se corrige poco a poco.",
+        "Un tren que falta un momento en los datos sigue unos minutos en el mapa, marcado como estimado, en vez de desaparecer.",
+        "Cada tren de larga distancia aparece una sola vez, aunque Renfe lo publique repetido."
+      ]
+    },
+    {
+      "version": "1.4",
+      "fecha": "2026-11-02",
+      "titulo": "Trenes por la vía y recorrido completo",
+      "cambios": [
+        "Los trenes se deslizan por el trazado real de la vía, también en las curvas, con la flecha en su sentido de marcha.",
+        "Al seguir un tren se dibuja su recorrido de origen a destino: lo ya hecho en gris y sus paradas con la hora de paso."
+      ]
+    },
+    {
+      "version": "1.3",
+      "fecha": "2026-11-01",
+      "titulo": "OUIGO y próximo tren",
+      "cambios": [
+        "Los trenes OUIGO aparecen en el mapa, situados según su horario.",
+        "Pestaña «Próximo tren»: elige dos estaciones de Cercanías y ve los próximos trenes, con cuenta atrás y retraso en vivo.",
+        "Si no hay tren directo, propone combinaciones con un transbordo."
+      ]
+    },
+    {
+      "version": "1.2",
+      "fecha": "2026-11-01",
+      "titulo": "Filtros, seguir un tren y compartirlo",
+      "cambios": [
+        "Filtros por tipo de servicio y por núcleo de Cercanías, con el porcentaje de trenes puntuales.",
+        "«Seguir este tren» lo mantiene centrado en el mapa, con una tarjeta que se actualiza sola.",
+        "Enlace para compartir un tren: quien lo abre va directo a él."
+      ]
+    },
+    {
+      "version": "1.1",
+      "fecha": "2026-11-01",
+      "titulo": "Fichas legibles y movimiento continuo",
+      "cambios": [
+        "Cada tren muestra su línea, origen, destino, horario y hora prevista de llegada en lugar de códigos.",
+        "Buscador por estación, línea o número de tren.",
+        "Los trenes se desplazan de forma continua, con una flecha que indica hacia dónde van."
+      ]
+    },
+    {
+      "version": "1.0",
+      "fecha": "2026-11-01",
+      "titulo": "Primera versión",
+      "cambios": [
+        "Mapa con los trenes de Renfe (Cercanías y larga distancia) a partir de sus datos abiertos en tiempo real.",
+        "Colores según la puntualidad, contadores y listado de trenes.",
+        "Modo simulado para probar la web sin datos en vivo."
+      ]
+    }
+  ]
+}

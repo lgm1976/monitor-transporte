@@ -18,6 +18,12 @@
  *     CONFIG.estimador.activo = false) se desliza como antes hasta cada
  *     posición nueva: por la vía si la conoce, en línea recta si no.
  *
+ * Agrupación: con el mapa alejado (zoom ≤ CONFIG.agrupacion.zoomMax) los
+ * trenes cercanos se pintan como un solo círculo con su número y un
+ * anillo por estados (agrupacion.js). Se reagrupa cada segundo, al mover
+ * o acercar el mapa y con cada lectura. El tren seguido y el de la ficha
+ * abierta nunca se agrupan.
+ *
  * Depende de la variable global `L` (Leaflet cargado en index.html).
  */
 
@@ -29,6 +35,7 @@ import { minutosAHora } from './horario.js';
 import { partirRecorrido, paradaPasada, distanciaEnRecorrido } from './recorrido.js';
 import { Estimador, horarioDeVehiculo } from './estimador.js';
 import { AlmacenHorariosCercanias } from '../fuentes/almacenHorariosCercanias.js';
+import { agruparPuntos, resumirGrupo, fondoGrupo, tamanoGrupo, totalGrupo } from './agrupacion.js';
 
 /** Duración del salto en modo de animación 'rapida' (ms) */
 const DURACION_SALTO_RAPIDO_MS = 900;
@@ -50,6 +57,8 @@ const AVANCE_MIN_RECORRIDO_M = 10;
 const COLOR_HECHO = '#94a3b8';
 /** Retraso mínimo (s) para dar la hora prevista en las paradas pendientes */
 const RETRASO_MIN_PARADAS_S = 60;
+/** Espera (ms) tras mover el mapa antes de reagrupar (el seguido lo mueve en cada fotograma) */
+const ESPERA_REAGRUPAR_MS = 120;
 
 /** Posición de un tramo en el instante t: por la vía si tiene trazado, si no en línea recta */
 function posicionDe(tramo, t) {
@@ -240,6 +249,15 @@ export class MapaTransporte {
      */
     this.recorrido = null;
     /**
+     * Agrupación con el mapa alejado: clave → {marcador, ids, firma, centro}.
+     * idEnfocado: tren elegido en el listado, fuera de los grupos hasta que
+     * se cierre su ficha.
+     */
+    this.grupos = new Map();
+    this.idEnfocado = null;
+    this.ultimaAgrupacionMs = 0;
+    this.temporizadorAgrupar = null;
+    /**
      * Estimador de posición (fase 3 del plan de movimiento fluido). Los
      * horarios de Cercanías los pide por núcleo según aparecen sus trenes.
      */
@@ -265,6 +283,7 @@ export class MapaTransporte {
       ...(c.subdominios ? { subdomains: c.subdominios } : {}),
       className: 'teselas-base',
     }).addTo(this.mapa);
+    this.capaGrupos = L.layerGroup().addTo(this.mapa);
     this._crearLeyenda();
 
     // Durante el zoom animado Leaflet recoloca los marcadores: no se mueven
@@ -272,6 +291,14 @@ export class MapaTransporte {
     this.mapa.on('zoomend', () => {
       this.enZoom = false;
       this._pintarFotograma(performance.now(), true);
+    });
+    // Al mover o acercar el mapa cambian los grupos (y los trenes que no
+    // se pintaban por estar fuera de la vista)
+    this.mapa.on('moveend', () => this._programarAgrupacion());
+    // Con la ficha cerrada, el tren elegido en el listado vuelve a poder agruparse
+    this.mapa.on('popupclose', () => {
+      this.idEnfocado = null;
+      this._programarAgrupacion();
     });
     // Si el usuario arrastra el mapa mientras sigue un tren, se respeta su
     // gesto: se deja de centrar (el tren sigue destacado) hasta que pulse «Centrar».
@@ -295,7 +322,8 @@ export class MapaTransporte {
         ORDEN_ESTADOS.map((e) => `<span><i style="background:${this.colorDe(e)}"></i>${ETIQUETAS_ESTADO[e]}</span>`).join('') +
         ((CONFIG.fuentesHorario || []).some((f) => f.activa)
           ? '<span><i class="leyenda-horario"></i>Según horario (sin datos en vivo)</span>'
-          : '');
+          : '') +
+        (CONFIG.agrupacion?.activa ? '<span><i class="leyenda-grupo"></i>Varios trenes (toca para acercar)</span>' : '');
       return div;
     };
     leyenda.addTo(this.mapa);
@@ -540,6 +568,139 @@ export class MapaTransporte {
     this._pintarEstimados(visibles, todos);
     this._centrarEnSeguido();
     this._actualizarRecorrido(t);
+    if (t - this.ultimaAgrupacionMs >= (CONFIG.agrupacion?.intervaloMs ?? 1000)) this._agrupar();
+  }
+
+  /* ---------- Agrupación con el mapa alejado ---------- */
+
+  /** ¿Se agrupa al zoom actual? */
+  _agrupacionActiva() {
+    const cfg = CONFIG.agrupacion;
+    return Boolean(cfg?.activa) && this.mapa.getZoom() <= cfg.zoomMax;
+  }
+
+  /**
+   * Reagrupa poco después de mover el mapa. Antes coloca todos los trenes
+   * en su sitio, porque los que estaban fuera de la vista no se pintan en
+   * cada fotograma y su posición guardada puede estar atrasada.
+   */
+  _programarAgrupacion() {
+    if (this.temporizadorAgrupar) return;
+    this.temporizadorAgrupar = setTimeout(() => {
+      this.temporizadorAgrupar = null;
+      if (this.enZoom) return;
+      if (this._agrupacionActiva()) this._pintarFotograma(performance.now(), true);
+      this._agrupar();
+    }, ESPERA_REAGRUPAR_MS);
+  }
+
+  /**
+   * Calcula los grupos con las posiciones pintadas y sincroniza el mapa:
+   * quita los marcadores de los trenes agrupados, pone un círculo por
+   * grupo y devuelve los demás. Los trenes agrupados siguen moviéndose
+   * (su posición se guarda aunque no estén en el mapa).
+   */
+  _agrupar() {
+    this.ultimaAgrupacionMs = performance.now();
+    if (this.enZoom) return;
+    const activa = this._agrupacionActiva();
+    let grupos = [];
+    if (activa) {
+      const zoom = this.mapa.getZoom();
+      const puntos = [];
+      for (const [id, registro] of this.marcadores) {
+        // El seguido y el de la ficha abierta, siempre a la vista
+        if (id === this.idSeguido || id === this.idEnfocado || registro.marcador.isPopupOpen()) continue;
+        const pixel = this.mapa.project(registro.marcador.getLatLng(), zoom);
+        puntos.push({ id, x: pixel.x, y: pixel.y, estado: registro.vehiculo.estado });
+      }
+      const cfg = CONFIG.agrupacion;
+      grupos = agruparPuntos(puntos, { radioPx: cfg.radioPx, minimo: cfg.minimo }).grupos
+        .map((g) => ({ ...g, clave: `${zoom}/${g.clave}`, centro: this.mapa.unproject([g.x, g.y], zoom) }));
+    }
+
+    const agrupados = new Set();
+    const vigentes = new Set();
+    for (const g of grupos) {
+      for (const id of g.ids) agrupados.add(id);
+      vigentes.add(g.clave);
+      this._pintarGrupo(g);
+    }
+    for (const [clave, grupo] of this.grupos) {
+      if (!vigentes.has(clave)) {
+        grupo.marcador.remove();
+        this.grupos.delete(clave);
+      }
+    }
+    for (const [id, registro] of this.marcadores) {
+      const debe = agrupados.has(id);
+      if (debe && !registro.agrupado) {
+        registro.agrupado = true;
+        registro.marcador.remove();
+      } else if (!debe && registro.agrupado) {
+        registro.agrupado = false;
+        registro.marcador.addTo(this.mapa);
+      }
+    }
+  }
+
+  /** Icono de un grupo: número de trenes dentro de un anillo con sus estados */
+  _iconoGrupo(conteos) {
+    const total = totalGrupo(conteos);
+    const tam = tamanoGrupo(total);
+    return L.divIcon({
+      className: 'grupo-trenes',
+      html: `<div class="grupo-anillo" style="--tam:${tam}px;background:${fondoGrupo(conteos, (e) => this.colorDe(e))}"><span>${total}</span></div>`,
+      iconSize: [tam, tam],
+      iconAnchor: [tam / 2, tam / 2],
+    });
+  }
+
+  /** Crea o actualiza el círculo de un grupo (solo redibuja si cambian sus números) */
+  _pintarGrupo(g) {
+    const firma = Object.entries(g.conteos).sort().join(';');
+    let grupo = this.grupos.get(g.clave);
+    if (!grupo) {
+      const marcador = L.marker(g.centro, { icon: this._iconoGrupo(g.conteos), keyboard: true, riseOnHover: true, zIndexOffset: 500 });
+      grupo = { marcador, ids: g.ids, firma };
+      marcador.on('click', () => this._abrirGrupo(grupo));
+      marcador.addTo(this.capaGrupos);
+      this.grupos.set(g.clave, grupo);
+      this._etiquetarGrupo(grupo, g.conteos);
+    } else {
+      if (!grupo.marcador.getLatLng().equals(g.centro, 1e-6)) grupo.marcador.setLatLng(g.centro);
+      if (grupo.firma !== firma) {
+        grupo.firma = firma;
+        grupo.marcador.setIcon(this._iconoGrupo(g.conteos));
+        this._etiquetarGrupo(grupo, g.conteos);
+      }
+    }
+    grupo.ids = g.ids;
+  }
+
+  /** Texto del grupo al pasar el ratón y para el lector de pantalla */
+  _etiquetarGrupo(grupo, conteos) {
+    const icono = grupo.marcador.getElement();
+    if (!icono) return;
+    const titulo = resumirGrupo(conteos);
+    icono.title = titulo;
+    icono.setAttribute('role', 'button');
+    icono.setAttribute('aria-label', `${titulo}. Acercar`);
+  }
+
+  /** Acerca el mapa a los trenes de un grupo (al menos hasta que se separen) */
+  _abrirGrupo(grupo) {
+    const puntos = grupo.ids.map((id) => this.marcadores.get(id)?.marcador.getLatLng()).filter(Boolean);
+    if (!puntos.length) return;
+    const limites = L.latLngBounds(puntos);
+    const zoomMin = CONFIG.agrupacion.zoomMax + 1;
+    const zoom = Math.max(Math.min(this.mapa.getBoundsZoom(limites.pad(0.15)), this.mapa.getMaxZoom()), Math.min(this.mapa.getZoom() + 2, zoomMin));
+    // Si el usuario estaba centrado en el tren seguido, explorar otro sitio lo suelta
+    if (this.idSeguido && this.centrarSeguido) {
+      this.centrarSeguido = false;
+      this.alSoltarSeguimiento?.();
+    }
+    this.mapa.flyTo(limites.getCenter(), zoom, { duration: 0.6 });
   }
 
   /* ---------- Seguir un tren ---------- */
@@ -580,6 +741,7 @@ export class MapaTransporte {
       this._actualizarIcono(registro, true);
     }
     if (id && acercar) this.centrarEnSeguido({ volar: true });
+    this._agrupar();
   }
 
   /** Vuelve a centrar el mapa en el tren seguido (botón «Centrar») */
@@ -810,6 +972,7 @@ export class MapaTransporte {
       this.ajustadoInicial = true;
       this.encuadrarTodo();
     }
+    this._agrupar();
   }
 
   encuadrarTodo() {
@@ -822,6 +985,9 @@ export class MapaTransporte {
   enfocar(id) {
     const registro = this.marcadores.get(id);
     if (!registro) return;
+    // Fuera de cualquier grupo mientras su ficha esté abierta
+    this.idEnfocado = id;
+    this._agrupar();
     const destino = registro.tramo ? registro.tramo.hasta : registro.marcador.getLatLng();
     this.mapa.flyTo(destino, Math.max(this.mapa.getZoom(), 10), { duration: 0.8 });
     this.mapa.once('moveend', () => registro.marcador.openPopup());

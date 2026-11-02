@@ -104,6 +104,8 @@ export const CONFIG = {
 
   /** Ruta al archivo de estilos (colores y umbrales de retraso) */
   rutaEstilos: 'data/estilo_mapa.json',
+  /** Descripción del proyecto y novedades de cada versión (botón «Información») */
+  rutaNovedades: 'data/novedades.json',
 
   /** Vista inicial del mapa: centro de la Península */
   mapa: {
@@ -213,6 +215,25 @@ export const CONFIG = {
    * Horarios completos de Cercanías para la pestaña «Próximo tren»
    * (un archivo por núcleo, generado por scripts/generar_diccionarios.py).
    */
+  /**
+   * Agrupar trenes con el mapa alejado (js/modulos/agrupacion.js). Hasta
+   * `zoomMax` los trenes a menos de `radioPx` en pantalla se pintan como un
+   * círculo con su número y un anillo con la proporción de cada estado;
+   * tocarlo acerca el mapa. El tren seguido y el de la ficha abierta
+   * nunca se agrupan. `activa: false` pinta siempre todos los trenes.
+   */
+  agrupacion: {
+    activa: true,
+    /** Zoom máximo con grupos (a partir del siguiente se ven todos los trenes) */
+    zoomMax: 10,
+    /** Lado de la rejilla en píxeles: más grande, menos grupos y más grandes */
+    radioPx: 60,
+    /** Trenes a partir de los cuales se forma un grupo */
+    minimo: 2,
+    /** Cada cuánto se reagrupa mientras los trenes se mueven (ms) */
+    intervaloMs: 1000,
+  },
+
   /** Estaciones de Cercanías en el mapa: se ven a partir de este zoom y abren su panel */
   estacionesMapa: {
     activas: true,
