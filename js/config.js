@@ -67,6 +67,38 @@ export const CONFIG = {
     retrocesoIgnoradoM: 60,
   },
 
+  /**
+   * Estimador de la posición de cada tren (js/modulos/estimador.js, fase 2
+   * del plan de movimiento fluido). En vez de perseguir la última posición
+   * de Renfe, cada tren avanza según su horario (Cercanías) o su velocidad
+   * media reciente (AV/LD/MD) y se corrige poco a poco con los datos reales.
+   * Lo usa el mapa desde la fase 3 para los trenes con vía y datos en vivo;
+   * con `activo: false` todos vuelven a la animación de `animacion`.
+   * También lo mide el banco de pruebas
+   * (node scripts/medir_fluidez.mjs --algoritmos actual,estimador).
+   * Los parámetros que no aparecen aquí toman el valor de AJUSTES_ESTIMADOR.
+   */
+  estimador: {
+    activo: true,
+    /** Segundos en que se recupera la diferencia con el modelo */
+    correccionSeg: 15,
+    /** Diferencias mayores (m) se colocan de golpe: por detrás / por delante del modelo */
+    colocarDetrasM: 3000,
+    colocarDelanteM: 1500,
+    /** Parada en cada estación del horario de Cercanías (s) */
+    paradaSeg: 30,
+    /** Tiempo máximo que el modelo avanza sin una posición nueva de Renfe (s) */
+    horizonteSeg: 600,
+    horizonteHorarioSeg: 600,
+    /** Un tren que falta en el feed se mantiene hasta este tiempo (s) */
+    retenerAusenteSeg: 600,
+    /**
+     * Tope de velocidad por servicio (km/h); se combina con los de
+     * AJUSTES_ESTIMADOR, así que basta con poner los que cambien
+     */
+    topesKmh: { 'Cercanías': 140, 'Media Distancia': 200, 'AVE': 310 },
+  },
+
   /** Tiempo máximo de espera de cada petición HTTP (ms) */
   timeoutPeticionMs: 15000,
 

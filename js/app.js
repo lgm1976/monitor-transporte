@@ -249,11 +249,12 @@ function pintarSeguimiento() {
       ? `Llega <strong>${escaparHtml(v.llegadaPrevista)}</strong> <s>${escaparHtml(v.llegadaProg)}</s>`
       : `Llega ${escaparHtml(v.llegadaProg)}`;
   }
-  const antiguedad = v.segunHorario ? null : describirAntiguedad(v.timestampMs);
-  const pie = [
-    llegada,
-    v.segunHorario ? 'posición estimada según horario' : antiguedad ? `posición ${escaparHtml(antiguedad)}` : '',
-  ].filter(Boolean).join(' · ');
+  const antiguedad = v.segunHorario ? null : describirAntiguedad(v.timestampMs ?? v.ausenteDesdeMs);
+  let posicion = '';
+  if (v.segunHorario) posicion = 'posición estimada según horario';
+  else if (v.estimado) posicion = `posición estimada${antiguedad ? ` · último dato ${escaparHtml(antiguedad)}` : ''}`;
+  else if (antiguedad) posicion = `posición ${escaparHtml(antiguedad)}`;
+  const pie = [llegada, posicion].filter(Boolean).join(' · ');
 
   el.innerHTML = `
     <div class="tarjeta-cuerpo">
@@ -313,7 +314,11 @@ async function refrescar() {
   app.cargando = true;
   document.body.dataset.cargando = 'true';
   try {
-    app.vehiculos = await app.fuente.leer();
+    const leidos = await app.fuente.leer();
+    // El estimador del mapa recibe la lectura completa y devuelve los trenes
+    // que faltan en ella pero sigue moviendo unos minutos (marcados `estimado`)
+    const retenidos = app.mapa.registrarLectura(leidos);
+    app.vehiculos = retenidos.length ? leidos.concat(retenidos) : leidos;
     app.fallosSeguidos = 0;
     renderizar();
     marcarActualizacion();
@@ -358,6 +363,7 @@ async function establecerModo(modo, { esArranque = false } = {}) {
   sincronizarUrl();
 
   app.vehiculos = [];
+  app.mapa.reiniciarEstimador();
   renderizar(); // limpia mapa y listado antes de la primera lectura del nuevo modo
   app.fallosSeguidos = 0;
   // Con un tren que seguir no se encuadra toda España: se va directo a él

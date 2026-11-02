@@ -3,11 +3,20 @@
  * ---------------------------------------------------------------
  * Todo lo relacionado con Leaflet: creación del mapa, marcadores
  * coloreados por estado y orientados según el rumbo, popups,
- * animación suave entre posiciones (por la vía cuando se conoce su
- * trazado, en línea recta si no), leyenda y seguimiento de un tren
+ * movimiento continuo de los trenes, leyenda y seguimiento de un tren
  * (el mapa lo mantiene centrado mientras se mueve) con su recorrido
  * completo: lo ya hecho en gris, lo pendiente en el color de su línea y
  * un punto en cada parada.
+ *
+ * Movimiento (fase 3 del plan de movimiento fluido):
+ *   - Los trenes con vía y datos en vivo los lleva el ESTIMADOR
+ *     (estimador.js): en cada fotograma dice dónde va cada uno según su
+ *     horario o su velocidad, corregido poco a poco con los datos de
+ *     Renfe. Si un tren falta en una lectura, sigue unos minutos
+ *     «estimado» (registrarLectura devuelve sus datos a app.js).
+ *   - El resto (sin vía, lejos de ella, según horario, cancelados, o con
+ *     CONFIG.estimador.activo = false) se desliza como antes hasta cada
+ *     posición nueva: por la vía si la conoce, en línea recta si no.
  *
  * Depende de la variable global `L` (Leaflet cargado en index.html).
  */
@@ -18,6 +27,8 @@ import { distanciaKm, calcularRumbo, diferenciaAngular, posicionEnTramo } from '
 import { proyectarEnTrazado, posicionEnTramoVia } from './trazados.js';
 import { minutosAHora } from './horario.js';
 import { partirRecorrido, paradaPasada, distanciaEnRecorrido } from './recorrido.js';
+import { Estimador, horarioDeVehiculo } from './estimador.js';
+import { AlmacenHorariosCercanias } from '../fuentes/almacenHorariosCercanias.js';
 
 /** Duración del salto en modo de animación 'rapida' (ms) */
 const DURACION_SALTO_RAPIDO_MS = 900;
@@ -105,6 +116,8 @@ function htmlPopup(v, color) {
   const fila = (k, val) => (val === null || val === undefined || val === '' ? '' : `<dt>${k}</dt><dd>${escaparHtml(val)}</dd>`);
   const antiguedad = describirAntiguedad(v.timestampMs);
   const datoViejo = v.timestampMs && Date.now() - v.timestampMs > MINUTOS_DATO_ANTIGUO * 60000;
+  // Tren que falta en los últimos datos y se sigue moviendo según su estimación
+  const ausente = v.estimado ? describirAntiguedad(v.timestampMs ?? v.ausenteDesdeMs) : null;
 
   // Línea de situación: dónde está ahora
   const situacion = [v.situacion, v.anden ? `andén ${v.anden}` : null, v.llegadaParada ? `${v.segunHorario ? 'hacia las' : 'prevista'} ${v.llegadaParada}` : null]
@@ -130,9 +143,11 @@ function htmlPopup(v, color) {
         ${v.cancelado ? '' : `<li><span class="etq">Ahora</span>${escaparHtml(situacion)}</li>`}
         ${horario}
         ${v.segunHorario ? '<li class="dato-horario"><span class="etq">Posición</span>Estimada según el horario</li>' : ''}
-        ${antiguedad && !v.segunHorario ? `<li class="${datoViejo ? 'dato-viejo' : ''}"><span class="etq">Posición</span>${escaparHtml(antiguedad)}${datoViejo ? ' · puede no estar al día' : ''}</li>` : ''}
+        ${v.estimado ? `<li class="dato-viejo"><span class="etq">Posición</span>Estimada${ausente ? ` · último dato ${escaparHtml(ausente)}` : ''}</li>` : ''}
+        ${antiguedad && !v.segunHorario && !v.estimado ? `<li class="${datoViejo ? 'dato-viejo' : ''}"><span class="etq">Posición</span>${escaparHtml(antiguedad)}${datoViejo ? ' · puede no estar al día' : ''}</li>` : ''}
       </ul>
       ${v.sintetico ? '<p class="ficha-aviso">Tren ficticio del modo simulado.</p>' : ''}
+      ${v.estimado ? '<p class="ficha-aviso">Este tren no aparece en los últimos datos en vivo. Lo seguimos moviendo por donde debería ir; si no vuelve en unos minutos, se quitará del mapa.</p>' : ''}
       ${v.segunHorario ? `<p class="ficha-aviso">${escaparHtml(v.servicio)} no publica la posición de sus trenes en tiempo real. Lo situamos donde debería ir según su horario: si lleva retraso, no lo sabemos.</p>` : ''}
       <div class="ficha-acciones">
         <button type="button" data-accion="seguir" data-id="${escaparHtml(v.id)}" class="boton-ficha boton-ficha-principal">Seguir este tren</button>
@@ -206,6 +221,14 @@ export class MapaTransporte {
      * pendiente, puntos, s, ultimoMs, pasadas}. null si no hay.
      */
     this.recorrido = null;
+    /**
+     * Estimador de posición (fase 3 del plan de movimiento fluido). Los
+     * horarios de Cercanías los pide por núcleo según aparecen sus trenes.
+     */
+    const horarios = AlmacenHorariosCercanias.compartido();
+    this.estimador = CONFIG.estimador?.activo
+      ? new Estimador(CONFIG.estimador, { horarioDe: (v, t) => horarioDeVehiculo(v, t, (slug) => horarios.obtener(slug)) })
+      : null;
 
     const c = CONFIG.mapa;
     this.mapa = L.map(idContenedor, {
@@ -262,7 +285,8 @@ export class MapaTransporte {
 
   _icono(vehiculo, rumbo) {
     return L.divIcon({
-      className: vehiculo.id === this.idSeguido ? 'marcador-tren marcador-seguido' : 'marcador-tren',
+      className: ['marcador-tren', vehiculo.id === this.idSeguido ? 'marcador-seguido' : '', vehiculo.estimado ? 'marcador-estimado' : '']
+        .filter(Boolean).join(' '),
       html: htmlIcono(vehiculo, this.colorDe(vehiculo.estado), rumbo),
       iconSize: [28, 28],
       iconAnchor: [14, 14],
@@ -428,7 +452,7 @@ export class MapaTransporte {
     if (this.idBucle !== null) return;
     const intervaloFotograma = 1000 / CONFIG.animacion.fps;
     const bucle = (t) => {
-      if (this.enMovimiento.size === 0) {
+      if (this.enMovimiento.size === 0 && !this._hayEstimados()) {
         this.idBucle = null;
         return;
       }
@@ -439,6 +463,32 @@ export class MapaTransporte {
       this.idBucle = requestAnimationFrame(bucle);
     };
     this.idBucle = requestAnimationFrame(bucle);
+  }
+
+  /** ¿Lleva el estimador algún tren? (el bucle de animación sigue mientras tanto) */
+  _hayEstimados() {
+    return Boolean(this.estimador?.trenes.size);
+  }
+
+  /**
+   * Coloca los marcadores que lleva el estimador donde dice para ahora.
+   * Como el resto, solo se tocan los visibles (y el seguido); el estimador
+   * avanza todos igualmente, así que al entrar en pantalla salen en su sitio.
+   */
+  _pintarEstimados(visibles, todos) {
+    if (!this.estimador) return;
+    for (const [id, p] of this.estimador.fotograma(Date.now())) {
+      const registro = this.marcadores.get(id);
+      if (!registro?.estimado) continue;
+      if (!todos && id !== this.idSeguido && !visibles.contains([p.lat, p.lon])) continue;
+      const previa = registro.pintada;
+      if (!previa || previa[0] !== p.lat || previa[1] !== p.lon) {
+        registro.marcador.setLatLng([p.lat, p.lon]);
+        registro.pintada = [p.lat, p.lon];
+      }
+      registro.rumboEstimado = p.rumbo;
+      this._actualizarIcono(registro);
+    }
   }
 
   /**
@@ -469,6 +519,7 @@ export class MapaTransporte {
         this.enMovimiento.delete(id);
       }
     }
+    this._pintarEstimados(visibles, todos);
     this._centrarEnSeguido();
     this._actualizarRecorrido(t);
   }
@@ -626,6 +677,38 @@ export class MapaTransporte {
     });
   }
 
+  /* ---------- Estimador ---------- */
+
+  /** Dónde está pintado ahora un tren (o null si no tiene marcador) */
+  _posicionPintada(id) {
+    const registro = this.marcadores.get(id);
+    if (!registro) return null;
+    const p = registro.tramo ? posicionDe(registro.tramo, performance.now()) : registro.marcador.getLatLng();
+    return { lat: p.lat, lon: p.lon ?? p.lng };
+  }
+
+  /**
+   * Pasa al estimador una lectura nueva del feed, con TODOS los vehículos
+   * (no solo los que dejan ver los filtros: un tren oculto por un filtro no
+   * ha desaparecido). Se llama una vez por lectura, antes de actualizar().
+   *
+   * @param {object[]} vehiculos
+   * @returns {object[]} trenes que faltan en esta lectura y se siguen
+   *          estimando, con `estimado: true` y `ausenteDesdeMs`: app.js los
+   *          añade a la lista para que sigan en el mapa, el listado y la
+   *          tarjeta del tren seguido mientras el estimador los mantenga.
+   */
+  registrarLectura(vehiculos) {
+    if (!this.estimador) return [];
+    this.estimador.actualizar(vehiculos, Date.now(), { pintadoDe: (id) => this._posicionPintada(id) });
+    return this.estimador.ausentes().map(({ vehiculo, ausenteDesde }) => ({ ...vehiculo, estimado: true, ausenteDesdeMs: ausenteDesde }));
+  }
+
+  /** Olvida los trenes estimados (al cambiar de modo) */
+  reiniciarEstimador() {
+    this.estimador?.vaciar();
+  }
+
   /**
    * Sincroniza los marcadores con la lista de vehículos visible:
    * crea los nuevos, mueve los existentes y elimina los que ya no están.
@@ -655,17 +738,35 @@ export class MapaTransporte {
           zIndexOffset: v.id === this.idSeguido ? 1000 : 0,
         }).bindPopup(htmlPopup(v, color), { maxWidth: 300, minWidth: 240 });
         marcador.addTo(this.mapa);
-        this.marcadores.set(v.id, { ...nuevo, marcador, rumboPintado: rumboInicial });
+        const estimado = Boolean(this.estimador?.tiene(v.id));
+        this.marcadores.set(v.id, { ...nuevo, marcador, rumboPintado: rumboInicial, estimado });
+        if (estimado) this._arrancarBucle();
         continue;
       }
 
       const anterior = registro.vehiculo;
       registro.vehiculo = v;
       registro.marcador.setPopupContent(htmlPopup(v, color));
-      // La posición solo cambia cuando el feed trae un dato nuevo para ese tren
-      if (anterior.lat !== v.lat || anterior.lon !== v.lon) this._moverA(registro, v.lat, v.lon);
-      else if (v.trazado && registro.via?.trazado !== v.trazado) this._engancharVia(registro);
-      this._actualizarIcono(registro, anterior.estado !== v.estado);
+      if (this.estimador?.tiene(v.id)) {
+        // Lo mueve el estimador en cada fotograma: se cancela cualquier deslizamiento
+        if (!registro.estimado) {
+          registro.tramo = null;
+          this.enMovimiento.delete(v.id);
+          registro.estimado = true;
+          registro.pintada = null;
+        }
+        this._arrancarBucle();
+      } else if (registro.estimado) {
+        // Deja de estimarse (viaje mal asignado, cancelado…): sigue desde
+        // donde estaba pintado hacia su posición real
+        registro.estimado = false;
+        registro.ultimoCambioMs = null;
+        this._moverA(registro, v.lat, v.lon);
+      } else if (anterior.lat !== v.lat || anterior.lon !== v.lon) {
+        // La posición solo cambia cuando el feed trae un dato nuevo para ese tren
+        this._moverA(registro, v.lat, v.lon);
+      } else if (v.trazado && registro.via?.trazado !== v.trazado) this._engancharVia(registro);
+      this._actualizarIcono(registro, anterior.estado !== v.estado || Boolean(anterior.estimado) !== Boolean(v.estimado));
     }
 
     // Un tren seguido parado no entra en el bucle de animación: se centra aquí

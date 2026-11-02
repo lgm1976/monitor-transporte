@@ -16,15 +16,15 @@
  */
 
 import { CONFIG } from '../config.js';
-import { pedirJson } from '../utilidades/red.js';
 import { AlmacenTrazados } from './almacenTrazados.js';
+import { AlmacenHorariosCercanias } from './almacenHorariosCercanias.js';
 import { slugNucleo, paradasDeViajeNucleo, estacionesJuntoAVia, prepararRecorrido } from '../modulos/recorrido.js';
 
 export class AlmacenRecorridos {
   constructor() {
     this.trazados = AlmacenTrazados.compartido();
-    /** slug del núcleo → promesa con su horario */
-    this.horarios = new Map();
+    /** Horarios por núcleo (los mismos que usa el estimador del mapa) */
+    this.horarios = AlmacenHorariosCercanias.compartido();
     /** clave → recorrido preparado (o null) */
     this.preparados = new Map();
   }
@@ -34,17 +34,9 @@ export class AlmacenRecorridos {
     return [v.id, v.tripId ?? '', v.trazadoRef ? `${v.trazadoRef.archivo}/${v.trazadoRef.id}` : ''].join('|');
   }
 
-  /** Horario de un núcleo de Cercanías (una descarga por núcleo) */
+  /** Horario de un núcleo de Cercanías (una descarga por núcleo, compartida) */
   _horario(slug) {
-    if (!this.horarios.has(slug)) {
-      const promesa = pedirJson(`${CONFIG.horariosCercanias.carpeta}${slug}.json`).catch((error) => {
-        console.warn(`[recorrido] horario de ${slug} no disponible:`, error.message);
-        this.horarios.delete(slug); // se reintenta la próxima vez
-        return null;
-      });
-      this.horarios.set(slug, promesa);
-    }
-    return this.horarios.get(slug);
+    return this.horarios.cargar(slug);
   }
 
   /** Trazado de la vía del vehículo, esperando a que se descargue si hace falta */
