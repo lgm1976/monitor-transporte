@@ -8,6 +8,7 @@
  *   4. bucle de refresco con pausa, reintentos y ahorro en segundo plano
  *   5. seguimiento de un tren (con su recorrido), enlace para compartirlo
  *      y filtros en la URL
+ *   6. avisos de servicio (lectura aparte, cada CONFIG.avisos.intervaloSeg)
  *
  * Parámetros de URL admitidos (se pueden combinar):
  *   ?modo=real|mock  ?tren=15868  ?servicio=AVE  ?nucleo=Madrid
@@ -17,19 +18,22 @@
 
 import { CONFIG } from './config.js';
 import { pedirJson } from './utilidades/red.js';
-import { MapaTransporte, escaparHtml, htmlPildora } from './modulos/mapa.js';
+import { MapaTransporte, escaparHtml, htmlPildora, htmlBotonAvisos } from './modulos/mapa.js';
 import { ETIQUETAS_ESTADO, describirAntiguedad } from './modulos/estado.js';
 import { claveTren, buscarTren, leerEstadoUrl, escribirEstadoUrl, enlaceTren } from './modulos/filtros.js';
 import { PanelLateral } from './modulos/panel.js';
 import { PanelTrayecto } from './modulos/panelTrayecto.js';
 import { PanelEstacion } from './modulos/panelEstacion.js';
 import { PanelFavoritos } from './modulos/panelFavoritos.js';
+import { PanelAvisos } from './modulos/panelAvisos.js';
+import { indexarPorLinea, avisosDeTren } from './modulos/avisos.js';
 import { Favoritos } from './modulos/estacion.js';
 import { CapaEstaciones } from './modulos/capaEstaciones.js';
 import { slugNucleo } from './modulos/recorrido.js';
 import { FuenteMock } from './fuentes/fuenteMock.js';
 import { FuenteGtfsRt } from './fuentes/fuenteGtfsRt.js';
 import { AlmacenRecorridos } from './fuentes/almacenRecorridos.js';
+import { FuenteAvisos } from './fuentes/fuenteAvisos.js';
 
 /** Estado global de la aplicación (único y explícito) */
 const app = {
@@ -63,10 +67,16 @@ const app = {
   favoritos: null,
   /** Estaciones de Cercanías dibujadas en el mapa */
   capaEstaciones: null,
+  /** Avisos de servicio: fuente, últimos datos, índice por línea y su pestaña */
+  fuenteAvisos: null,
+  datosAvisos: null,
+  indiceAvisos: new Map(),
+  temporizadorAvisos: null,
+  panelAvisos: null,
 };
 
 /** Pestañas del panel lateral */
-const VISTAS = ['trenes', 'trayecto', 'estacion', 'favoritos'];
+const VISTAS = ['trenes', 'trayecto', 'estacion', 'avisos', 'favoritos'];
 
 /** localStorage, o null si el navegador no deja usarlo */
 function almacenLocal() {
@@ -297,6 +307,7 @@ function pintarSeguimiento() {
       <p class="tarjeta-estado" style="--c:${color}"><span class="punto"></span>${escaparHtml(v.textoRetraso ?? ETIQUETAS_ESTADO[v.estado])}</p>
       ${situacion ? `<p class="tarjeta-texto">${escaparHtml(situacion)}</p>` : ''}
       ${pie ? `<p class="tarjeta-pie">${pie}</p>` : ''}
+      ${htmlBotonAvisos(v)}
       <div class="tarjeta-acciones">
         ${app.seguido.centrar ? '' : '<button type="button" data-accion="centrar" class="boton-ficha boton-ficha-principal">Centrar en el tren</button>'}
         <button type="button" data-accion="compartir" data-id="${escaparHtml(v.id)}" class="boton-ficha">Compartir</button>
@@ -309,6 +320,11 @@ function pintarSeguimiento() {
 
 /** Vuelve a pintar mapa y panel con los datos en memoria y los filtros actuales */
 function renderizar() {
+  // Avisos de servicio de la línea de cada tren (para su ficha y la tarjeta)
+  for (const v of app.vehiculos) {
+    const avisos = avisosDeTren(app.indiceAvisos, v);
+    v.avisos = avisos.length ? avisos : undefined;
+  }
   const visibles = app.panel.filtrar(app.vehiculos);
   // El tren seguido se ve siempre, aunque los filtros lo dejen fuera
   const seguido = vehiculoSeguido();
@@ -324,6 +340,7 @@ function renderizar() {
   app.trayecto?.actualizar(app.vehiculos);
   app.estacion?.actualizar(app.vehiculos);
   app.panelFavoritos?.actualizar(app.vehiculos);
+  app.panelAvisos?.pintarInsignia(app.panel.ambito.nucleo);
   actualizarRecorrido();
   pintarSeguimiento();
 }
@@ -335,7 +352,7 @@ function cambiarVista(vista) {
     b.setAttribute('aria-selected', String(b.dataset.vista === app.vista));
   }
   for (const v of VISTAS) $(`vista-${v}`).hidden = app.vista !== v;
-  const paneles = { trayecto: app.trayecto, estacion: app.estacion, favoritos: app.panelFavoritos };
+  const paneles = { trayecto: app.trayecto, estacion: app.estacion, avisos: app.panelAvisos, favoritos: app.panelFavoritos };
   for (const [v, panel] of Object.entries(paneles)) {
     if (v === app.vista) panel.activar(app.panel.ambito.nucleo);
     else if (panel.activo) panel.desactivar();
@@ -349,6 +366,59 @@ function abrirEstacion({ red, estacion }) {
   if (app.vista === 'estacion') app.estacion.activar();
   else cambiarVista('estacion');
   plegarPanel(false);
+}
+
+/** Abre la pestaña «Avisos» con los de un núcleo y, si se indica, una línea */
+function abrirAvisos({ nucleo = '', linea = '' } = {}) {
+  app.mapa.mapa.closePopup();
+  app.panelAvisos.abrir({ nucleo, linea });
+  if (app.vista === 'avisos') app.panelAvisos.activar();
+  else cambiarVista('avisos');
+  plegarPanel(false);
+}
+
+/* ---------- Avisos de servicio ---------- */
+
+/**
+ * Lee los avisos (aparte de las posiciones: cambian poco y pesan más).
+ * Si el feed está caducado se listan en su pestaña pero no se marcan en
+ * los trenes ni en las estaciones.
+ */
+async function leerAvisos() {
+  if (!CONFIG.avisos?.activos || !app.fuenteAvisos) return;
+  const fuente = app.fuenteAvisos;
+  try {
+    const datos = await fuente.leer();
+    if (fuente !== app.fuenteAvisos) return; // cambió de modo mientras leía
+    app.datosAvisos = datos;
+    app.indiceAvisos = datos.caducado ? new Map() : indexarPorLinea(datos.avisos);
+    app.panelAvisos.actualizar(datos);
+    app.estacion.actualizarAvisos(datos);
+    renderizar();
+  } catch (error) {
+    console.warn('[avisos]', error);
+    if (fuente === app.fuenteAvisos) app.panelAvisos.fallo(error.message);
+  }
+}
+
+/** Programa la siguiente lectura de avisos (no con la pestaña oculta ni en pausa) */
+function programarAvisos() {
+  clearTimeout(app.temporizadorAvisos);
+  if (!CONFIG.avisos?.activos || app.pausado || document.hidden) return;
+  app.temporizadorAvisos = setTimeout(async () => {
+    await leerAvisos();
+    programarAvisos();
+  }, CONFIG.avisos.intervaloSeg * 1000);
+}
+
+/** Avisos nuevos al cambiar de modo (simulados o reales) */
+function reiniciarAvisos() {
+  app.fuenteAvisos = CONFIG.avisos?.activos ? new FuenteAvisos({ modo: app.modo }) : null;
+  app.datosAvisos = null;
+  app.indiceAvisos = new Map();
+  app.panelAvisos.actualizar(null);
+  app.estacion.actualizarAvisos(null);
+  leerAvisos().then(programarAvisos);
 }
 
 /** Abre un favorito en su pestaña */
@@ -424,6 +494,7 @@ async function establecerModo(modo, { esArranque = false } = {}) {
 
   app.vehiculos = [];
   app.mapa.reiniciarEstimador();
+  reiniciarAvisos();
   renderizar(); // limpia mapa y listado antes de la primera lectura del nuevo modo
   app.fallosSeguidos = 0;
   // Con un tren que seguir no se encuadra toda España: se va directo a él
@@ -468,6 +539,7 @@ function conectarControles() {
     app.pausado = !app.pausado;
     pintarPausa();
     programar();
+    programarAvisos();
   });
   $('btn-refrescar').addEventListener('click', async () => {
     await refrescar();
@@ -490,6 +562,7 @@ function conectarControles() {
     if (accion === 'seguir') seguirTren(boton.dataset.id);
     else if (accion === 'compartir') compartirTren(boton.dataset.id);
     else if (accion === 'dejar') dejarDeSeguir();
+    else if (accion === 'avisos') abrirAvisos({ nucleo: boton.dataset.nucleo, linea: boton.dataset.linea });
     else if (accion === 'centrar' && app.seguido) {
       app.seguido.centrar = true;
       app.mapa.centrarEnSeguido();
@@ -517,7 +590,9 @@ function conectarControles() {
   document.addEventListener('visibilitychange', async () => {
     if (document.hidden) {
       clearTimeout(app.temporizador);
+      clearTimeout(app.temporizadorAvisos);
     } else if (!app.pausado) {
+      programarAvisos();
       await refrescar();
       programar();
     }
@@ -577,8 +652,10 @@ async function iniciar() {
     alCambiar: sincronizarUrl,
     favoritos: app.favoritos,
     inicial: estadoUrl.estacion ? { red: estadoUrl.red, estacion: estadoUrl.estacion } : {},
+    alVerAvisos: abrirAvisos,
   });
   app.estacion.alCambiarFavoritos = favoritosCambiados;
+  app.panelAvisos = new PanelAvisos({ alAbrirEstacion: abrirEstacion });
   app.panelFavoritos = new PanelFavoritos({
     favoritos: app.favoritos,
     alAbrir: abrirFavorito,

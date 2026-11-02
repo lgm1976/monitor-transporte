@@ -60,6 +60,10 @@
           <button type="button" role="tab" id="pestana-trenes" data-vista="trenes" aria-selected="true" aria-controls="vista-trenes">Trenes</button>
           <button type="button" role="tab" id="pestana-trayecto" data-vista="trayecto" aria-selected="false" aria-controls="vista-trayecto">Próximo tren</button>
           <button type="button" role="tab" id="pestana-estacion" data-vista="estacion" aria-selected="false" aria-controls="vista-estacion">Estación</button>
+          <button type="button" role="tab" id="pestana-avisos" data-vista="avisos" aria-selected="false" aria-controls="vista-avisos" title="Avisos de servicio" aria-label="Avisos de servicio" class="pestana-icono">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 10v4.5" stroke-linecap="round"/><circle cx="12" cy="17" r="0.6" fill="currentColor"/></svg>
+            <span id="insignia-avisos" class="insignia-avisos" hidden></span>
+          </button>
           <button type="button" role="tab" id="pestana-favoritos" data-vista="favoritos" aria-selected="false" aria-controls="vista-favoritos" title="Favoritos" aria-label="Favoritos" class="pestana-icono">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8z"/></svg>
           </button>
@@ -86,8 +90,24 @@
             </div>
             <p id="estacion-lineas" class="trayecto-lineas"></p>
           </div>
+          <div id="estacion-avisos" class="estacion-avisos" hidden></div>
           <ul id="estacion-resultados" class="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto" aria-live="polite"></ul>
           <p class="trayecto-nota">Trenes de los dos sentidos. Retraso en vivo de los que ya circulan; el resto, según horario. El andén aparece cuando Renfe da el tren llegando a la estación.</p>
+        </section>
+
+        <!-- Vista «Avisos»: incidencias, obras y accesibilidad -->
+        <section id="vista-avisos" role="tabpanel" aria-labelledby="pestana-avisos" hidden class="flex min-h-0 flex-1 flex-col">
+          <div class="space-y-2 border-b border-slate-200 p-4">
+            <label class="block">
+              <span class="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Cercanías de</span>
+              <select id="avisos-nucleo" class="selector"></select>
+            </label>
+            <div id="avisos-categorias" class="avisos-categorias" role="group" aria-label="Tipo de aviso"></div>
+            <p id="avisos-lineas" class="trayecto-lineas"></p>
+          </div>
+          <div id="avisos-estado" class="avisos-estado" role="status" hidden></div>
+          <ul id="avisos-lista" class="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto" aria-live="polite"></ul>
+          <p id="avisos-nota" class="trayecto-nota"></p>
         </section>
 
         <!-- Vista «Favoritos»: estaciones y trayectos guardados -->

@@ -419,6 +419,9 @@ def guardar_horarios_cercanias(horarios: dict[str, dict]) -> None:
         indice.append({
             "nucleo": nucleo, "archivo": archivo, "estaciones": len(datos["estaciones"]), "viajes": len(datos["viajes"]),
             "caja": caja_estaciones(datos),
+            # Códigos de sus estaciones separados por espacios: los avisos de
+            # servicio de una estación (ascensores…) no dicen de qué núcleo son
+            "ids": " ".join(e[0] for e in datos["estaciones"]),
         })
     (SALIDA_HORARIOS / "indice.json").write_text(
         json.dumps({"generado": datetime.now(ZONA).isoformat(timespec="seconds"), "nucleos": indice}, ensure_ascii=False, indent=1),

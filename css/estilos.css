@@ -338,3 +338,64 @@ body[data-siguiendo='true'] .leyenda-mapa { display: none; }
 .tooltip-estacion::before { border-top-color: #0f172a; }
 .tooltip-estacion small { display: block; opacity: 0.7; font-size: 11px; }
 .boton-favorito[hidden], .acciones-estacion [hidden] { display: none; }
+
+/* ---------- Avisos de servicio ---------- */
+.pestana-icono + .pestana-icono { margin-left: 0; }
+.pestanas .pestana-icono { position: relative; }
+.insignia-avisos {
+  position: absolute; top: 3px; right: 0; min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 9999px; background: #d97706; color: #fff; font-size: 10px; font-weight: 700;
+  line-height: 16px; text-align: center; font-variant-numeric: tabular-nums;
+}
+.insignia-avisos[hidden] { display: none; }
+.avisos-categorias { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip-categoria {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 9999px;
+  border: 1px solid #e2e8f0; background: #fff; font-size: 12px; font-weight: 600; color: #475569;
+}
+.chip-categoria span { font-weight: 500; color: #94a3b8; font-variant-numeric: tabular-nums; }
+.chip-categoria:hover:not(:disabled) { border-color: #94a3b8; }
+.chip-categoria:disabled { opacity: 0.45; cursor: default; }
+.chip-categoria[aria-pressed='true'] { background: #0f172a; border-color: #0f172a; color: #fff; }
+.chip-categoria[aria-pressed='true'] span { color: #cbd5e1; }
+.avisos-estado { margin: 10px 16px 0; padding: 8px 10px; border-radius: 8px; background: #fef3c7; color: #78350f; font-size: 12px; line-height: 1.45; }
+.avisos-estado[hidden] { display: none; }
+
+.aviso { --cat: #dc2626; padding: 10px 16px 10px 14px; border-left: 3px solid var(--cat); }
+.aviso[data-cat='obras'] { --cat: #d97706; }
+.aviso[data-cat='accesibilidad'] { --cat: #2563eb; }
+.aviso-cabecera { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.aviso-categoria { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--cat); }
+.aviso-nuevo, .aviso-programado { font-size: 10px; font-weight: 700; border-radius: 9999px; padding: 0 6px; }
+.aviso-nuevo { background: #fee2e2; color: #b91c1c; }
+.aviso-programado { background: #e0e7ff; color: #3730a3; }
+.aviso-fecha { margin-left: auto; font-size: 11px; color: #94a3b8; font-variant-numeric: tabular-nums; }
+.aviso-lineas { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; margin-top: 5px; }
+.aviso-lineas .pildora { font-size: 10px; padding: 0 5px; }
+.aviso-mas-lineas, .aviso-nucleo { font-size: 11px; color: #64748b; }
+.aviso-nucleo { margin-left: 2px; }
+.aviso-texto { margin-top: 5px; font-size: 13px; line-height: 1.45; color: #1e293b; overflow-wrap: anywhere; }
+.aviso-texto a { color: var(--color-acento); font-weight: 600; text-decoration: underline; }
+.aviso-texto.es-largo { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+.aviso[data-abierto='true'] .aviso-texto.es-largo { display: block; }
+.aviso-leer { margin-top: 2px; font-size: 12px; font-weight: 600; color: var(--color-acento); }
+.aviso-estaciones { margin-top: 4px; font-size: 12px; color: #64748b; }
+.aviso-estacion { font-weight: 600; color: var(--color-acento); }
+.aviso-estacion:hover, .aviso-leer:hover { text-decoration: underline; }
+
+/* Avisos en la ficha del tren, la tarjeta del seguido y el panel de estación */
+.boton-avisos {
+  display: flex; align-items: center; gap: 6px; width: 100%; margin-top: 8px; padding: 5px 8px;
+  border-radius: 6px; background: #fffbeb; border: 1px solid #fcd34d; color: #92400e;
+  font-size: 12px; font-weight: 600; text-align: left;
+}
+.boton-avisos:hover { background: #fef3c7; }
+.boton-avisos svg { flex-shrink: 0; }
+.boton-avisos .flecha { margin-left: auto; }
+.estacion-avisos { padding: 8px 16px; border-bottom: 1px solid #f1f5f9; background: #fffdf5; }
+.estacion-avisos[hidden] { display: none; }
+.estacion-aviso { display: flex; gap: 6px; font-size: 12px; line-height: 1.4; color: #1e293b; }
+.estacion-aviso + .estacion-aviso { margin-top: 4px; }
+.estacion-aviso svg { flex-shrink: 0; margin-top: 1px; color: #2563eb; }
+.estacion-aviso p { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.estacion-avisos .boton-avisos { margin-top: 6px; }

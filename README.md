@@ -10,6 +10,7 @@ Aplicación web estática que muestra en un mapa interactivo la posición y la p
 - **Trenes OUIGO según horario** (OUIGO no publica datos en tiempo real)
 - **Próximo tren** entre dos estaciones de Cercanías, con cuenta atrás y retraso en vivo
 - **Panel de estación** (próximos trenes en los dos sentidos) y **favoritos** de estaciones y trayectos; las estaciones de Cercanías se ven en el mapa al acercarse
+- **Avisos de servicio** de Renfe Cercanías (incidencias, obras y accesibilidad) en su pestaña, en la ficha de cada tren y en el panel de estación
 - Colores y umbrales de retraso definidos en `data/estilo_mapa.json`
 
 ## Estructura
@@ -33,6 +34,8 @@ js/
     estacion.js            Próximos trenes de una estación y favoritos (puro, testeable)
     panelEstacion.js       Pestaña «Estación» del panel
     panelFavoritos.js      Pestaña «Favoritos» (★) del panel
+    avisos.js              Avisos de servicio: limpieza, categoría, cruce con líneas y estaciones (puro, testeable)
+    panelAvisos.js         Pestaña «Avisos» (⚠) del panel
     capaEstaciones.js      Estaciones de Cercanías en el mapa
     normalizador.js        GTFS-RT → modelo interno (puro, testeable)
     solapados.js           Un marcador por tren aunque el feed lo repita en varios viajes (puro, testeable)
@@ -42,6 +45,7 @@ js/
     fuenteMock.js          Datos simulados con movimiento
     fuenteGtfsRt.js        Feeds reales (varias fuentes en paralelo)
     fuenteHorario.js       Trenes según horario (OUIGO), en los dos modos
+    fuenteAvisos.js        Avisos de servicio (feed de Renfe o simulados)
     almacenTrazados.js     Carga bajo demanda los trazados (común a todas las fuentes)
     almacenRecorridos.js   Vía y paradas del tren seguido (horarios, red de vías)
     almacenHorariosCercanias.js  Horarios de Cercanías por núcleo y su índice, una descarga compartida
@@ -51,13 +55,14 @@ js/
 data/
   estilo_mapa.json         Colores del tema y umbrales de retraso
   mock_gtfs_rt.json        Feed de ejemplo para el modo simulado
+  mock_alerts.json         Avisos inventados para el modo simulado
   gtfs-realtime.proto      Esquema GTFS-RT (subconjunto) para binarios
   diccionarios/            Estaciones, líneas y viajes (se regeneran cada noche)
     cercanias.json, ld.json, mock.json
   horarios/                Horarios (se regeneran cada noche)
     ouigo.json             OUIGO, para pintarlo según horario
     cercanias/             Todas las paradas de cada tren, un archivo por núcleo
-      indice.json, madrid.json, rodalies-de-catalunya.json…  (el índice lleva la caja de estaciones de cada núcleo)
+      indice.json, madrid.json, rodalies-de-catalunya.json…  (el índice lleva la caja y los códigos de las estaciones de cada núcleo)
   trazados/cercanias/      Trazado de las vías de cada línea, un archivo por núcleo
   trazados/ld/red.json     Vías de larga distancia y OUIGO (OpenStreetMap)
 scripts/
@@ -353,6 +358,32 @@ El cálculo está en `js/modulos/estacion.js` (puro, con pruebas en `tests/estac
 
 Comprobado el 02/11/2026 en el navegador (modo simulado, escritorio y móvil): Atocha con sus nueve líneas y el filtro, favoritos de estación y de trayecto (Parla → Sol) con su resumen, que siguen al recargar, enlace `?red=madrid&estacion=18000` y una estación (Embajadores) abierta tocándola en el mapa.
 
+## Avisos de servicio
+
+Pestaña **⚠ «Avisos»** del panel lateral (desde el 02/11/2026), con los avisos que publica Renfe en GTFS Realtime (`Alert`): incidencias, obras con servicio alternativo y problemas de accesibilidad (ascensores, escaleras, estaciones no accesibles).
+
+- **Filtros**: núcleo de Cercanías (con cuántos avisos tiene cada uno), tipo (Incidencia, Obras, Accesibilidad) y línea. El navegador recuerda el último núcleo; si no hay ninguno, se abre el elegido en «Trenes».
+- **Cada aviso**: tipo (con un color en el borde: rojo, ámbar o azul), «Nuevo» si se publicó hace menos de 2 horas, «Programado» si empieza más adelante, desde cuándo, las líneas afectadas con su color oficial, el texto (los largos, con «Leer más»; los enlaces, pulsables) y las estaciones que nombra, que abren su pestaña «Estación».
+- **En la ficha del tren y en la tarjeta del tren seguido**: «Hay un aviso en la C4», que abre la pestaña filtrada por esa línea. Solo avisos de servicio vigentes (no los de accesibilidad ni los programados). Un aviso de la C4 vale para la C4a y la C4b y al revés.
+- **En el panel de estación**: los avisos que nombran la estación (el ascensor que no funciona) y un botón con los de sus líneas.
+- **Insignia** en la pestaña con el número de avisos de servicio del núcleo elegido en «Trenes» (o de todos).
+- Se leen cada 2 minutos (`CONFIG.avisos.intervaloSeg`), aparte de las posiciones, por el mismo proxy. No se leen con la pestaña oculta ni en pausa.
+
+**Qué publica Renfe** (`https://gtfsrt.renfe.com/alerts.json`, comprobado el 02/11/2026; no hay feed de avisos de AV/LD/MD):
+
+- Unos 70 avisos, solo con `descriptionText` en español: sin título, causa ni efecto. La categoría se deduce del texto (`clasificarAviso`).
+- Las líneas van en `routeId` (`10T0011C4`: los dos primeros dígitos son el núcleo, como en el GTFS estático). Las estaciones van en `stopId` sin núcleo; se saca de los códigos de estaciones que ahora guarda `data/horarios/cercanias/indice.json` (campo `ids`, lo añade `generar_diccionarios.py`).
+- `activePeriod` solo trae la hora de publicación. Los avisos con fin ya pasado se descartan; los que empiezan más adelante se marcan como programados.
+- Los textos empiezan con etiquetas como `#MadC4b` (se quitan: la línea ya se ve en su pastilla) y en Bilbao y San Sebastián vienen en euskera y castellano separados por ` // ` (se queda el castellano, conservando el nombre de la estación). Se descartan los de «Pruebas».
+
+**Feed congelado.** El 02/11/2026 el feed de avisos de Renfe seguía con la cabecera del **07/10/2026 09:32** (las posiciones sí se actualizan), con avisos de obras ya terminadas. Por eso, si el feed tiene más de 6 horas (`CONFIG.avisos.caducidadHoras`), la pestaña los sigue listando con una advertencia («pueden no estar vigentes, Renfe no lo actualiza desde…») pero **no se marcan en los trenes, las estaciones ni la insignia**. En cuanto Renfe lo renueve, todo se activa solo.
+
+**Modo simulado.** `data/mock_alerts.json` trae seis avisos inventados (incidencia en la C4, obras en la R1, obras programadas en la C5, ascensor de Atocha, escalera de Nuevos Ministerios y un aviso bilingüe de Bilbao) con las horas puestas al día en cada lectura, para ver la pestaña, la ficha del C4 simulado y el panel de Atocha.
+
+El cálculo está en `js/modulos/avisos.js` (puro, con pruebas en `tests/avisos.test.mjs`). `data/gtfs-realtime.proto` incluye ahora los mensajes `Alert` por si algún feed llega en binario.
+
+Comprobado el 02/11/2026 en el navegador: modo simulado (pestaña, filtros, ficha del C4 → pestaña filtrada, panel de Atocha con su ascensor y los avisos de la C4 y la C5, estación del aviso → pestaña «Estación», vista de móvil) y real (68 avisos en 9 núcleos con la advertencia de feed caducado y ningún tren marcado). Desactivable con `CONFIG.avisos.activos: false`.
+
 ## Trenes OUIGO según horario
 
 Los feeds en tiempo real son de Renfe y solo traen trenes de Renfe. **OUIGO no publica la posición ni el retraso de sus trenes en ningún feed abierto**; solo su horario (GTFS estático), en el Punto de Acceso Nacional de Transporte Multimodal (nap.transportes.gob.es, con registro). Mobility Database guarda una copia pública, que es la que usa la app.
@@ -591,6 +622,6 @@ Ajustes probados con el banco (`--ajustes`): corregir en 8, 10 o 25 s, colocar a
 - Ofrecer el transbordo también cuando llega antes que el directo; dos transbordos; Media Distancia.
 - Paradas del recorrido con los trenes que pasarán por ellas a lo largo del día (evolución de la fase 3).
 - Horas de paso en las paradas de larga distancia (el diccionario `ld.json` solo guarda origen y destino).
-- Capa de avisos de servicio (`Alert` de GTFS-RT).
+- Avisos de servicio: marcar en el mapa las estaciones con avisos de accesibilidad, resumen de avisos en los favoritos y en «Próximo tren», y enlace con la pestaña en la URL. Revisar si Renfe vuelve a actualizar su feed de avisos (congelado desde el 07/10/2026).
 - Filtro por operador cuando haya fuentes de otros operadores.
 - Ficha deslizable desde abajo en el móvil también para el listado.

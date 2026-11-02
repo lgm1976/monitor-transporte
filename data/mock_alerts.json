@@ -1,0 +1,62 @@
+{
+  "_nota": "Avisos inventados para el modo simulado. `_minutos` es el inicio respecto a ahora (negativo: ya empezó); `_enDias` + `_hora`, dentro de N días a esa hora; `_duracionMinutos`, el final. fuenteAvisos.js pone las horas al día en cada lectura.",
+  "header": { "gtfsRealtimeVersion": "2.0", "timestamp": "0" },
+  "entity": [
+    {
+      "id": "SIM_AVISO_C4",
+      "_minutos": -18,
+      "alert": {
+        "activePeriod": [{ "start": "0" }],
+        "informedEntity": [{ "routeId": "10T0011C4" }, { "routeId": "10T0013C4a" }, { "routeId": "10T0016C4b" }],
+        "descriptionText": { "translation": [{ "text": "#MadC4 Por una incidencia en la infraestructura entre Getafe Centro y Parla, los trenes circulan con retrasos de hasta 15 minutos.", "language": "es" }] }
+      }
+    },
+    {
+      "id": "SIM_AVISO_R1",
+      "_minutos": -2900,
+      "alert": {
+        "activePeriod": [{ "start": "0" }],
+        "informedEntity": [{ "routeId": "51T0001R1" }],
+        "descriptionText": { "translation": [{ "text": "Por obras de mejora, circulación por vía única entre Montgat y El Masnou. Servicio alternativo por carretera entre Badalona y Premià de Mar de 22:00h a 05:00h.", "language": "es" }] }
+      }
+    },
+    {
+      "id": "SIM_AVISO_C5",
+      "_enDias": 3,
+      "_hora": "00:30",
+      "_duracionMinutos": 570,
+      "alert": {
+        "activePeriod": [{ "start": "0", "end": "0" }],
+        "informedEntity": [{ "routeId": "10T0035C5" }],
+        "descriptionText": { "translation": [{ "text": "Por obras de mejora en la infraestructura, entre las 00:30h y las 10:00h los trenes de la C5 inician y finalizan su recorrido en Atocha. Más información: https://www.renfe.com/es/es/cercanias/cercanias-madrid", "language": "es" }] }
+      }
+    },
+    {
+      "id": "SIM_AVISO_ATOCHA",
+      "_minutos": -95,
+      "alert": {
+        "activePeriod": [{ "start": "0" }],
+        "informedEntity": [{ "stopId": "18000" }],
+        "descriptionText": { "translation": [{ "text": "Ascensor de la estación de Atocha que da acceso al vestíbulo desde las vías 1 y 2 se encuentra fuera de servicio.", "language": "es" }] }
+      }
+    },
+    {
+      "id": "SIM_AVISO_NMINISTERIOS",
+      "_minutos": -600,
+      "alert": {
+        "activePeriod": [{ "start": "0" }],
+        "informedEntity": [{ "stopId": "18002" }],
+        "descriptionText": { "translation": [{ "text": "Escalera mecánica de subida del andén 3 de Nuevos Ministerios fuera de servicio.", "language": "es" }] }
+      }
+    },
+    {
+      "id": "SIM_AVISO_BILBAO",
+      "_minutos": -4400,
+      "alert": {
+        "activePeriod": [{ "start": "0" }],
+        "informedEntity": [{ "routeId": "60T0001C1" }, { "routeId": "60T0002C2" }],
+        "descriptionText": { "translation": [{ "text": "ZORROTZA. 2. trenbideko igogailua zerbitzuz kanpo dago. Bilbo/Abando noranzko bidaiariei eragiten die. // El ascensor de vía 2 se encuentra fuera de servicio. Afecta a los viajeros dirección Bilbao Abando.", "language": "es" }] }
+      }
+    }
+  ]
+}

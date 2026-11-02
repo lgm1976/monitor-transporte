@@ -5,7 +5,9 @@
  * estación (o la tocas en el mapa) y ves los próximos trenes que pasan
  * por ella en los dos sentidos, con la cuenta atrás, el retraso en vivo
  * y el andén cuando Renfe lo da. Se puede filtrar por línea y guardar
- * la estación en favoritos. El cálculo está en estacion.js.
+ * la estación en favoritos. Arriba se ven los avisos de servicio vigentes
+ * de la estación (ascensores, accesos…) y cuántos hay en sus líneas.
+ * El cálculo está en estacion.js y avisos.js.
  */
 
 import { CONFIG } from '../config.js';
@@ -14,6 +16,8 @@ import { normalizarTexto } from './panel.js';
 import { estacionesOrdenadas, textoFaltan } from './trayectos.js';
 import { trenesEnEstacion, lineasDeEstacion, datosEstacion } from './estacion.js';
 import { AlmacenHorariosCercanias } from '../fuentes/almacenHorariosCercanias.js';
+import { avisosDeEstacion, baseLinea } from './avisos.js';
+import { htmlTextoAviso } from './panelAvisos.js';
 
 const CLAVE_GUARDADO = 'monitor-transporte:estacion';
 /** Cada cuánto se recalcula la cuenta atrás aunque no lleguen datos nuevos */
@@ -56,9 +60,13 @@ export class PanelEstacion {
    * @param {()=>void} opciones.alCambiar (para la URL)
    * @param {import('./estacion.js').Favoritos} opciones.favoritos
    * @param {{red?:string, estacion?:string}} [opciones.inicial] de la URL
+   * @param {({nucleo, linea})=>void} [opciones.alVerAvisos] abre la pestaña «Avisos»
    */
-  constructor({ alVerEnMapa, alMostrarEstacion, alCambiar, favoritos, inicial = {} }) {
+  constructor({ alVerEnMapa, alMostrarEstacion, alCambiar, favoritos, inicial = {}, alVerAvisos }) {
     this.alVerEnMapa = alVerEnMapa;
+    this.alVerAvisos = alVerAvisos;
+    /** Datos de FuenteAvisos (null si aún no hay o el feed está caducado) */
+    this.avisos = null;
     this.alMostrarEstacion = alMostrarEstacion;
     this.alCambiar = alCambiar;
     this.favoritos = favoritos;
@@ -81,6 +89,11 @@ export class PanelEstacion {
     this.elResultados = document.getElementById('estacion-resultados');
     this.elFavorito = document.getElementById('estacion-favorito');
     this.elVer = document.getElementById('estacion-ver');
+    this.elAvisos = document.getElementById('estacion-avisos');
+    this.elAvisos.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-ver-avisos]');
+      if (b) this.alVerAvisos?.({ nucleo: this.nombreNucleo, linea: b.dataset.linea || '' });
+    });
 
     this.elRed.addEventListener('change', () => {
       this.estado.estacion = '';
@@ -193,6 +206,7 @@ export class PanelEstacion {
     if (this.estado.red && this.estado.estacion) guardar({ red: this.estado.red, estacion: this.estado.estacion });
     this._pintarCabecera();
     this._pintarLineas();
+    this._pintarAvisos();
     this._pintarResultados();
     if (this.activo) this.alMostrarEstacion?.(this._datosActuales(), { volar: false });
     this.alCambiar?.();
@@ -202,6 +216,44 @@ export class PanelEstacion {
   actualizar(vehiculos) {
     this.vehiculos = vehiculos;
     if (this.activo) this._pintarResultados();
+  }
+
+  /** Nuevos avisos de servicio (de FuenteAvisos) */
+  actualizarAvisos(datos) {
+    this.avisos = datos;
+    if (this.activo) this._pintarAvisos();
+  }
+
+  /**
+   * Avisos de la estación (todos los que la nombran) y botón con los de
+   * servicio de sus líneas. No se enseñan si el feed está caducado.
+   */
+  _pintarAvisos() {
+    const e = this._datosActuales();
+    if (!e || !this.avisos || this.avisos.caducado) {
+      this.elAvisos.hidden = true;
+      return;
+    }
+    const lineas = lineasDeEstacion(this.nucleo, e.id, Date.now()).map((l) => l.nombre);
+    const { propios, deLineas } = avisosDeEstacion(this.avisos.avisos, { estacion: e.id, nucleo: this.nombreNucleo, lineas });
+    if (!propios.length && !deLineas.length) {
+      this.elAvisos.hidden = true;
+      return;
+    }
+    const icono = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 10v4.5" stroke-linecap="round"/></svg>';
+    const html = propios.map((a) => `<div class="estacion-aviso">${icono}<p>${htmlTextoAviso(a.texto)}</p></div>`);
+    if (deLineas.length) {
+      // Líneas de la estación que tienen avisos, para filtrar si es solo una
+      const bases = new Set(lineas.map(baseLinea));
+      const afectadas = [...new Set(deLineas.flatMap((a) => a.lineas)
+        .filter((l) => l.nucleo === this.nombreNucleo && bases.has(baseLinea(l.nombre)))
+        .map((l) => l.nombre.replace(/(\d)[a-z]$/, '$1')))];
+      const n = deLineas.length;
+      html.push(`<button type="button" class="boton-avisos" data-ver-avisos data-linea="${afectadas.length === 1 ? escaparHtml(afectadas[0]) : ''}">
+        ${icono}${n === 1 ? 'Hay un aviso' : `Hay ${n} avisos`} en ${afectadas.length === 1 ? `la ${escaparHtml(afectadas[0])}` : `sus líneas (${escaparHtml(afectadas.join(', '))})`}<span class="flecha" aria-hidden="true">›</span></button>`);
+    }
+    this.elAvisos.innerHTML = html.join('');
+    this.elAvisos.hidden = false;
   }
 
   /** Repinta la estrella (p. ej. si se quitó el favorito desde la pestaña Favoritos) */

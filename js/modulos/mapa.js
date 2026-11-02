@@ -105,6 +105,20 @@ export function htmlPildora(v) {
   return `<span class="pildora" style="background:${fondo};color:${color}">${escaparHtml(texto)}</span>`;
 }
 
+/**
+ * Botón «Hay 2 avisos en la C4» de la ficha y de la tarjeta del tren
+ * seguido. Lo rellena app.js en `v.avisos` (avisos de servicio vigentes
+ * de su línea); abre la pestaña «Avisos» filtrada por esa línea.
+ */
+export function htmlBotonAvisos(v) {
+  const n = v.avisos?.length ?? 0;
+  if (!n) return '';
+  const texto = `${n === 1 ? 'Hay un aviso' : `Hay ${n} avisos`} en la ${v.linea?.nombre ?? 'línea'}`;
+  return `<button type="button" class="boton-avisos" data-accion="avisos" data-nucleo="${escaparHtml(v.nucleo ?? '')}" data-linea="${escaparHtml(v.linea?.nombre ?? '')}">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 10v4.5" stroke-linecap="round"/></svg>
+      ${escaparHtml(texto)}<span class="flecha" aria-hidden="true">›</span></button>`;
+}
+
 /** Subtítulo de la ficha: "Cercanías Sevilla" o "Tren 00190" */
 function textoServicio(v) {
   if (v.servicio === 'Cercanías') return v.nucleo ? `Cercanías ${v.nucleo}` : 'Cercanías';
@@ -146,6 +160,7 @@ function htmlPopup(v, color) {
         ${v.estimado ? `<li class="dato-viejo"><span class="etq">Posición</span>Estimada${ausente ? ` · último dato ${escaparHtml(ausente)}` : ''}</li>` : ''}
         ${antiguedad && !v.segunHorario && !v.estimado ? `<li class="${datoViejo ? 'dato-viejo' : ''}"><span class="etq">Posición</span>${escaparHtml(antiguedad)}${datoViejo ? ' · puede no estar al día' : ''}</li>` : ''}
       </ul>
+      ${htmlBotonAvisos(v)}
       ${v.sintetico ? '<p class="ficha-aviso">Tren ficticio del modo simulado.</p>' : ''}
       ${v.estimado ? '<p class="ficha-aviso">Este tren no aparece en los últimos datos en vivo. Lo seguimos moviendo por donde debería ir; si no vuelve en unos minutos, se quitará del mapa.</p>' : ''}
       ${v.segunHorario ? `<p class="ficha-aviso">${escaparHtml(v.servicio)} no publica la posición de sus trenes en tiempo real. Lo situamos donde debería ir según su horario: si lleva retraso, no lo sabemos.</p>` : ''}

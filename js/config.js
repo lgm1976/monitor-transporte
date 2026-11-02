@@ -226,6 +226,31 @@ export const CONFIG = {
     nucleoPorDefecto: 'madrid',
   },
 
+  /**
+   * Avisos de servicio (Alert de GTFS-RT): incidencias, obras y
+   * accesibilidad. Renfe solo publica los de Cercanías, en JSON y sin
+   * cabecera CORS. Se leen aparte de las posiciones y con menos
+   * frecuencia (cambian poco y el archivo pesa unos 100 KB).
+   */
+  avisos: {
+    activos: true,
+    url: 'https://gtfsrt.renfe.com/alerts.json',
+    formato: 'auto',
+    usarProxy: true,
+    /** Avisos inventados para el modo simulado (las horas se ponen al día) */
+    rutaMock: 'data/mock_alerts.json',
+    /** Nombres de estaciones y colores de línea */
+    diccionario: 'data/diccionarios/cercanias.json',
+    intervaloSeg: 120,
+    /**
+     * Si el feed lleva más de estas horas sin actualizarse, sus avisos se
+     * siguen listando en la pestaña con una advertencia, pero no se marcan
+     * en los trenes ni en las estaciones (el 02/11/2026 Renfe llevaba casi
+     * un mes sin renovarlo).
+     */
+    caducidadHoras: 6,
+  },
+
   /** Ruta al .proto (solo se carga si algún feed llega en binario) */
   rutaProto: 'data/gtfs-realtime.proto',
   /** protobuf.js en versión ESM desde CDN, cargado bajo demanda */
