@@ -146,7 +146,8 @@ export function normalizarFeed(feedPosiciones, opciones) {
   const tsCabecera = aNumero(campo(campo(feedPosiciones, 'header'), 'timestamp'));
   const vehiculos = [];
   // Algunos feeds (p. ej. Renfe LD) repiten el id de entidad para viajes
-  // distintos del mismo tren: se lleva la cuenta para desambiguar.
+  // distintos del mismo tren: se lleva la cuenta para desambiguar. Después,
+  // unificarViajesSolapados (solapados.js) deja un solo vehículo por tren.
   const idsUsados = new Set();
 
   for (const entidad of campo(feedPosiciones, 'entity') || []) {

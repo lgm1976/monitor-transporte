@@ -157,6 +157,7 @@ function htmlPopup(v, color) {
         <summary>Datos técnicos</summary>
         <dl>
           ${fila('Viaje', v.tripId)}
+          ${fila('Mismo tren como', v.viajesSolapados?.length ? v.viajesSolapados.join(', ') : null)}
           ${fila('Etiqueta', v.etiqueta)}
           ${fila('Vehículo', v.vehiculoId)}
           ${fila('Parada', v.paradaId)}

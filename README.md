@@ -30,6 +30,7 @@ js/
     estimador.js           Dónde va cada tren en cada instante: horario o velocidad + corrección suave (puro, testeable)
     panelTrayecto.js       Pestaña «Próximo tren» del panel
     normalizador.js        GTFS-RT → modelo interno (puro, testeable)
+    solapados.js           Un marcador por tren aunque el feed lo repita en varios viajes (puro, testeable)
     mapa.js                Leaflet: marcadores, movimiento continuo, fichas, leyenda
     panel.js               Selectores de servicio y núcleo, contadores-filtro, buscador y listado
   fuentes/
@@ -132,12 +133,27 @@ Configura las fuentes en `CONFIG.fuentesReales`:
 - Lo que hay que saber de esos feeds:
   - **No envían cabecera CORS**: desde GitHub Pages necesitan el proxy (ver abajo). Sin él verás un aviso en la cabecera.
   - **No traen rumbo ni velocidad**: los marcadores salen como punto, sin flecha.
-  - El de larga distancia **repite el id de entidad** para viajes distintos del mismo tren; el normalizador lo desambigua con el `trip_id`.
+  - El de larga distancia **repite el tren en cada viaje solapado** (mismo id de entidad y misma posición, distinto `trip_id`). La app deja **un solo marcador por tren** (ver «Un marcador por tren en larga distancia»).
   - Las horas del feed de larga distancia llegan con una hora de retraso; la app lo corrige (ver «De códigos a información legible»).
 - Si un feed llega en binario, se carga `protobuf.js` desde CDN la primera vez y se decodifica con `data/gtfs-realtime.proto`.
 - Si una fuente falla, las demás siguen pintándose y se muestra un aviso con el detalle.
 - Ante fallos repetidos, el intervalo de refresco se alarga (hasta ×6) y vuelve a la normalidad al recuperarse.
 - Con la pestaña en segundo plano no se hacen peticiones.
+
+### Un marcador por tren en larga distancia
+
+Renfe parte muchos trenes de larga distancia en varios viajes solapados: el AVE 09725 sale como Madrid → Marsella, Madrid → Barcelona y Figueres → Marsella; el Alvia 00622, en seis. El feed de posiciones publica el tren una vez por viaje, con el mismo id de entidad y la misma posición, así que antes se pintaban dos o más marcadores superpuestos que además contaban varias veces en los contadores, el listado y el porcentaje de puntualidad.
+
+Desde el 02/11/2026, `js/modulos/solapados.js` los une antes de traducirlos con el diccionario:
+
+- Agrupa las entradas con el mismo id de entidad a menos de 1 km entre sí. Casi siempre la posición es idéntica, pero a veces Renfe actualiza un viaje una lectura antes que los otros (60 m en el 04314). El mismo número en sitios distintos no se une.
+- Se queda con el **viaje completo**: el de recorrido más largo según el diccionario, dejando atrás los tramos cancelados (si se cancela un tramo, el tren sigue circulando). A igualdad, o sin diccionario, el `trip_id` menor, para que la elección no cambie entre lecturas.
+- Si ese viaje no trae la parada, el retraso o la hora, los toma de otro del grupo. La posición es la más reciente.
+- El tren conserva el id sin sufijo aunque Renfe cambie el orden de las entidades, así que el estimador, el seguimiento y el enlace para compartir no notan nada. En «Datos técnicos» de la ficha, «Mismo tren como» lista los demás viajes.
+
+Con la grabación del 02/11/2026 (15 minutos): de 148 a 109 trenes de larga distancia por lectura, ninguno cambia de viaje entre lecturas y ninguna entrada del mismo tren queda sin unir. El banco de pruebas pasa por el mismo camino.
+
+No se unen trenes con números distintos en la misma posición (dos trenes acoplados o un tren que cambia de número en ruta, como el Regional Exprés 18125/18126 en Tortosa): son circulaciones distintas con su propio horario.
 
 ## Movimiento continuo de los trenes
 
@@ -183,7 +199,7 @@ Los GTFS de AV/LD/MD y de OUIGO no traen trazados, así que salen de **OpenStree
 - Con ellas monta el grafo de la red y busca el camino (A*) entre **cada par de estaciones consecutivas** de algún viaje: 1.423 pares, 1.403 con camino. Cada tipo de tren prefiere su ancho: estándar para AVE, Avlo, Avant y OUIGO; ibérico (o métrico, si es el único que llega) para Media Distancia y Regionales; cualquiera para Alvia, Intercity y Euromed. Los apartaderos y las variantes solo de mercancías cuestan más, y para la alta velocidad se prefieren las vías `highspeed=yes`.
 - Las estaciones que caen en mitad de una vía sin desvíos parten la vía en su punto más cercano, y los apeaderos a menos de 1,5 km no se confunden entre sí.
 - Los caminos se guardan como **segmentos de vía compartidos** (cada trozo una vez, aunque lo usen cien trenes) simplificados a 10 m, más la lista de segmentos de cada tramo: `data/trazados/ld/red.json`, 220 KB (140 KB comprimidos). No lleva fecha: solo cambia si cambian las vías.
-- El diccionario `ld.json` da a cada viaje su recorrido como lista de paradas (`60000-04040-71801`) y la web encadena los tramos. Renfe parte un mismo tren en varios viajes solapados (Vigo → Barcelona, León → Barcelona, Zaragoza → Lleida…) y el feed da la misma posición en todos, así que cada viaje usa el recorrido **completo** de su tren.
+- El diccionario `ld.json` da a cada viaje su recorrido como lista de paradas (`60000-04040-71801`) y la web encadena los tramos. Renfe parte un mismo tren en varios viajes solapados (Vigo → Barcelona, León → Barcelona, Zaragoza → Lleida…) y el feed da la misma posición en todos, así que cada viaje usa el recorrido **completo** de su tren (y en el mapa se pinta uno solo, ver «Un marcador por tren en larga distancia»).
 - Lo que falta (Murcia–Lorca–Águilas, Almería, Xàtiva–Alcoi, el tramo francés de los AVE a Francia y algún tren turístico) se une en línea recta.
 
 En los trenes en vivo funciona igual que en Cercanías: cada posición se proyecta sobre la vía y el tren se desliza por ella. Comprobado el 02/11/2026 con el feed real: las posiciones de Renfe quedan a 2 m de mediana de las vías de OSM (p90 9 m); en 60 s de seguimiento en el navegador, el p95 de la separación de los trenes de larga distancia a la vía bajó de 45 m a 8 m.
@@ -523,7 +539,7 @@ En la de 5,5 minutos (sin TripUpdates; el modelo horario saca el retraso solo de
 
 Frente a los objetivos:
 
-- **Tope**: cumplido en Cercanías. En larga distancia quedan 3 (un AVE y su viaje solapado, y un Media Distancia): los suelta el estimador porque van hacia atrás por su vía, y los mueve la animación de siempre.
+- **Tope**: cumplido en Cercanías. En larga distancia quedan 3 (un AVE y su viaje solapado, y un Media Distancia): los suelta el estimador porque van hacia atrás por su vía, y los mueve la animación de siempre. Con un marcador por tren quedan 2 (el AVE ya cuenta una vez; 120 trenes de larga distancia medidos en lugar de 159, con las demás métricas por hora de tren prácticamente iguales).
 - **Desapariciones cortas**: cumplido en las dos.
 - **Paradas fuera de estación**: cumplido en la grabación corta (0,09 y 0,08); en la larga, 0,15 y 0,29. Las que quedan son trenes que Renfe no mueve en más de 10 minutos (horizonte) y trenes que van por delante de su modelo cuando éste está parado.
 - **Distancia media a la referencia < 400 m**: no se cumple (646 m y 1,4 km), aunque mejora a la animación actual y la mediana baja a 300 m en Cercanías. La media la ponen unos pocos trenes con datos imposibles: un Regional Exprés que Renfe solo mueve tres veces en 15 minutos (22 km de golpe), un AVE que avanza al revés de su viaje… Ahí la propia referencia (avance uniforme entre posiciones) tampoco es fiable. El objetivo era orientativo; el resto de métricas mejoran mucho más.
@@ -540,7 +556,6 @@ Ajustes probados con el banco (`--ajustes`): corregir en 8, 10 o 25 s, colocar a
 - Ofrecer el transbordo también cuando llega antes que el directo; dos transbordos; Media Distancia.
 - Paradas del recorrido con los trenes que pasarán por ellas a lo largo del día (evolución de la fase 3).
 - Horas de paso en las paradas de larga distancia (el diccionario `ld.json` solo guarda origen y destino).
-- Mostrar un solo marcador por tren en larga distancia: Renfe envía la misma posición en cada viaje solapado del mismo tren (Vigo → Barcelona, León → Barcelona…).
 - Capa de avisos de servicio (`Alert` de GTFS-RT).
 - Filtro por operador cuando haya fuentes de otros operadores.
 - Ficha deslizable desde abajo en el móvil también para el listado.

@@ -9,7 +9,8 @@
  *   [{ tMs, vehiculos: [...] }, ...]
  *
  * Cada vehículo pasa por el mismo camino que en el navegador:
- * normalizarFeed → enriquecerVehiculo → AlmacenTrazados.asignar, con los
+ * normalizarFeed → unificarViajesSolapados → enriquecerVehiculo →
+ * AlmacenTrazados.asignar, con los
  * diccionarios y los trazados de data/ (se leen del disco en lugar de
  * descargarse). Así el banco de pruebas mide exactamente lo que vería
  * el mapa.
@@ -26,6 +27,7 @@ import {
   normalizarFeed, indexarActualizacionesViaje, detectarDesfaseHorario, tiemposDelFeed,
 } from '../../js/modulos/normalizador.js';
 import { Diccionario, enriquecerVehiculo } from '../../js/modulos/diccionario.js';
+import { unificarViajesSolapados } from '../../js/modulos/solapados.js';
 import { AlmacenTrazados } from '../../js/fuentes/almacenTrazados.js';
 
 /** Fuentes grabadas: prefijo del archivo → fuente de CONFIG.fuentesReales */
@@ -170,12 +172,17 @@ export function cargarGrabacion(carpeta, { raiz }) {
       const desfasePos = detectarDesfaseHorario(tiemposDelFeed(posiciones), unix);
       const desfaseViajes = viajes ? detectarDesfaseHorario(tiemposDelFeed(viajes, { soloPrevisiones: true }), unix) : 0;
       cabeceras[f.fuenteId] = Number(posiciones?.header?.timestamp || 0) + desfasePos;
-      const normalizados = normalizarFeed(posiciones, {
+      const crudos = normalizarFeed(posiciones, {
         indiceViajes: indexarActualizacionesViaje([viajes, posiciones], { desfaseSeg: desfaseViajes }),
         desfaseSeg: desfasePos,
         unidadVelocidad: f.config?.unidadVelocidad,
         umbrales: UMBRALES,
         fuente: f.config?.nombre ?? f.fuenteId,
+      });
+      // Igual que la web: un solo vehículo por tren aunque Renfe lo repita en cada viaje solapado
+      const normalizados = unificarViajesSolapados(crudos, {
+        duracionMin: (tripId) => f.diccionario.duracionViaje(tripId),
+        umbrales: UMBRALES,
       }).map((v) => enriquecerVehiculo(v, f.diccionario));
       for (const v of normalizados) {
         total++;

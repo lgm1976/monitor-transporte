@@ -41,6 +41,21 @@ export class Diccionario {
     return this.estaciones[String(id)] ?? null;
   }
 
+  /**
+   * Minutos entre la salida y la llegada programadas de un viaje (con
+   * vuelta a medianoche), o null si no está en el diccionario. Sirve para
+   * reconocer el viaje completo entre varios viajes solapados del mismo tren.
+   */
+  duracionViaje(tripId) {
+    const v = tripId ? this.viajes[tripId] : null;
+    if (!v || !v[3] || !v[4]) return null;
+    const minutos = (hhmm) => {
+      const [h, m] = hhmm.split(':').map(Number);
+      return h * 60 + m;
+    };
+    return (((minutos(v[4]) - minutos(v[3])) % 1440) + 1440) % 1440;
+  }
+
   /** Datos de horario de un viaje o null si no está en la ventana */
   viaje(tripId) {
     const v = tripId ? this.viajes[tripId] : null;

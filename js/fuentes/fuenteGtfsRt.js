@@ -12,6 +12,7 @@ import { CONFIG } from '../config.js';
 import { pedirFeedGtfsRt, pedirJson } from '../utilidades/red.js';
 import { normalizarFeed, indexarActualizacionesViaje, detectarDesfaseHorario, tiemposDelFeed } from '../modulos/normalizador.js';
 import { Diccionario, enriquecerVehiculo } from '../modulos/diccionario.js';
+import { unificarViajesSolapados } from '../modulos/solapados.js';
 import { FuenteHorario } from './fuenteHorario.js';
 import { AlmacenTrazados } from './almacenTrazados.js';
 
@@ -72,12 +73,17 @@ export class FuenteGtfsRt {
     if (desfasePosiciones || desfaseViajes) {
       console.info(`[${fuente.id}] Corrigiendo desfase horario: posiciones +${desfasePosiciones} s, previsiones +${desfaseViajes} s`);
     }
-    return normalizarFeed(posiciones, {
+    const normalizados = normalizarFeed(posiciones, {
       indiceViajes: indexarActualizacionesViaje([viajes, posiciones], { desfaseSeg: desfaseViajes }),
       desfaseSeg: desfasePosiciones,
       unidadVelocidad: fuente.unidadVelocidad,
       umbrales: this.umbrales,
       fuente: fuente.nombre,
+    });
+    // Un marcador por tren: Renfe repite el tren en cada viaje solapado (ver solapados.js)
+    return unificarViajesSolapados(normalizados, {
+      duracionMin: (tripId) => diccionario.duracionViaje(tripId),
+      umbrales: this.umbrales,
     }).map((v) => enriquecerVehiculo(v, diccionario));
   }
 
