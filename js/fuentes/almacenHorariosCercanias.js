@@ -13,12 +13,17 @@
  *     del mapa, que usan el horario ya preparado (`cargarPreparado`) y el
  *     índice de núcleos (`indice()`).
  *
+ * También guarda el horario de larga distancia (data/horarios/ld.json,
+ * clave «ld»), con el mismo formato, y el que monta el modo simulado
+ * («ld-simulado», que no se descarga: lo registra la fuente simulada).
+ *
  * Si una descarga falla, se reintenta como pronto al cabo de un minuto.
  */
 
 import { CONFIG } from '../config.js';
 import { pedirJson } from '../utilidades/red.js';
 import { prepararNucleo } from '../modulos/trayectos.js';
+import { HORARIO_LARGA_DISTANCIA, HORARIO_LARGA_DISTANCIA_SIMULADO } from '../modulos/horasParada.js';
 
 /** Espera mínima (ms) antes de reintentar una descarga fallida */
 const REINTENTO_MS = 60000;
@@ -74,12 +79,27 @@ export class AlmacenHorariosCercanias {
     return horario ? this._preparar(horario) : horario;
   }
 
+  /** Dirección del archivo de un horario (null si no se descarga) */
+  _url(slug) {
+    if (slug === HORARIO_LARGA_DISTANCIA) return CONFIG.horariosLargaDistancia?.archivo ?? null;
+    if (slug === HORARIO_LARGA_DISTANCIA_SIMULADO) return null;
+    return `${CONFIG.horariosCercanias.carpeta}${slug}.json`;
+  }
+
+  /** Guarda un horario montado en el navegador (el del modo simulado) */
+  registrar(slug, horario) {
+    this.listos.set(slug, horario);
+    this.promesas.delete(slug);
+  }
+
   /** Descarga (una vez) el horario de un núcleo; la promesa da null si falla */
   cargar(slug) {
     if (!slug) return Promise.resolve(null);
     if (this.listos.has(slug)) return Promise.resolve(this.listos.get(slug));
+    const url = this._url(slug);
+    if (!url) return Promise.resolve(null);
     if (!this.promesas.has(slug)) {
-      const promesa = pedirJson(`${CONFIG.horariosCercanias.carpeta}${slug}.json`)
+      const promesa = pedirJson(url)
         .then((horario) => {
           this.listos.set(slug, horario);
           return horario;
@@ -102,6 +122,7 @@ export class AlmacenHorariosCercanias {
   obtener(slug) {
     if (!slug) return null;
     if (this.listos.has(slug)) return this.listos.get(slug);
+    if (!this._url(slug)) return null;
     const fallo = this.fallos.get(slug);
     if (!this.promesas.has(slug) && (!fallo || Date.now() - fallo > REINTENTO_MS)) this.cargar(slug);
     return undefined;

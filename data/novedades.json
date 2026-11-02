@@ -13,7 +13,7 @@
         "titulo": "Qué puedes hacer",
         "lista": [
           "Ver todos los trenes en el mapa con un color según su puntualidad y filtrarlos por tipo de servicio o por núcleo de Cercanías.",
-          "Seguir un tren, con su recorrido y sus paradas, y mandar el enlace a quien te espera.",
+          "Seguir un tren, con su recorrido y la hora de paso por cada parada, y mandar el enlace a quien te espera.",
           "Consultar el próximo tren entre dos estaciones de Cercanías, también con un transbordo.",
           "Ver los próximos trenes de una estación y guardar tus estaciones y trayectos favoritos.",
           "Leer los avisos de servicio de Renfe Cercanías: incidencias, obras y accesibilidad."
@@ -31,7 +31,7 @@
       {
         "titulo": "Ten en cuenta",
         "lista": [
-          "Renfe renueva las posiciones cada 15 o 20 segundos. Entre un dato y el siguiente, la web calcula por dónde va cada tren, así que su posición en el mapa es aproximada. Si Renfe tarda en mover un tren de Cercanías, el mapa lo espera en la estación hasta el dato siguiente.",
+          "Renfe renueva las posiciones cada 15 o 20 segundos. Entre un dato y el siguiente, la web calcula por dónde va cada tren, así que su posición en el mapa es aproximada. Si Renfe tarda en mover un tren, el mapa lo espera en la estación hasta el dato siguiente. La hora prevista en cada parada supone que el tren mantiene el retraso que lleva ahora.",
           "Los trenes OUIGO se sitúan según su horario: si llevan retraso, no lo sabemos.",
           "Con «Ver simulados» la web muestra trenes inventados, para probarla sin datos en vivo.",
           "Es un proyecto personal, sin relación con Renfe ni con ningún otro operador. Para decisiones importantes, consulta siempre la información oficial."
@@ -40,6 +40,16 @@
     ]
   },
   "versiones": [
+    {
+      "version": "1.10",
+      "fecha": "2026-11-02",
+      "titulo": "Horas de paso en los trenes de larga distancia",
+      "cambios": [
+        "Al seguir un AVE, Alvia, Avlo, Intercity o Media Distancia, cada parada de su recorrido muestra a qué hora llega y sale. Si va con retraso, en las que le quedan verás la hora prevista junto a la del horario.",
+        "La ficha del tren y la tarjeta del tren seguido dicen a qué hora llegará a su próxima parada, o a qué hora sale si está parado en una estación.",
+        "Los trenes de larga distancia avanzan siguiendo su horario, como los de Cercanías: esperan en las estaciones donde tienen parada y se detienen menos entre dos estaciones."
+      ]
+    },
     {
       "version": "1.9",
       "fecha": "2026-11-02",

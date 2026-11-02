@@ -9,6 +9,7 @@
  *               fuera de la ventana), las estaciones que caen sobre su vía
  *   AV/LD/MD    la lista de paradas del id de su recorrido, con las
  *               coordenadas de la red de vías (data/trazados/ld/red.json)
+ *               y la hora de llegada y salida de su horario (data/horarios/ld.json)
  *   OUIGO       las de su horario (ya traen coordenadas y horas)
  *
  * Sin trazado, prepararRecorrido une las paradas en línea recta.
@@ -19,6 +20,7 @@ import { CONFIG } from '../config.js';
 import { AlmacenTrazados } from './almacenTrazados.js';
 import { AlmacenHorariosCercanias } from './almacenHorariosCercanias.js';
 import { slugNucleo, paradasDeViajeNucleo, estacionesJuntoAVia, prepararRecorrido } from '../modulos/recorrido.js';
+import { paradasConHora, ponerHoras } from '../modulos/horasParada.js';
 
 export class AlmacenRecorridos {
   constructor() {
@@ -56,6 +58,18 @@ export class AlmacenRecorridos {
     return paradasDeViajeNucleo(horario, v.tripId) ?? estacionesJuntoAVia(horario, trazado);
   }
 
+  /**
+   * Larga distancia: pone en las paradas del recorrido (el del tren
+   * completo) las horas de su viaje y, si faltan, las de sus viajes solapados
+   */
+  async _conHoras(v, paradas) {
+    if (!v.horarioRef || !paradas.length || paradas.every((p) => Number.isFinite(p.minutos))) return paradas;
+    const horario = await this.horarios.cargar(v.horarioRef);
+    if (!horario) return paradas;
+    const viajes = [v.tripId, ...(v.viajesSolapados ?? [])].map((t) => paradasConHora(horario, t));
+    return ponerHoras(paradas, viajes);
+  }
+
   /** Completa con las coordenadas de la red de vías las paradas que no las traigan */
   async _conCoordenadas(paradas) {
     if (paradas.every((p) => Number.isFinite(p.lat))) return paradas;
@@ -78,7 +92,7 @@ export class AlmacenRecorridos {
     if (this.preparados.has(clave)) return this.preparados.get(clave);
     const trazado = await this._trazado(v);
     let paradas = v.paradasRecorrido ?? (v.servicio === 'Cercanías' ? await this._paradasCercanias(v, trazado) : []);
-    paradas = await this._conCoordenadas(paradas);
+    paradas = await this._conCoordenadas(await this._conHoras(v, paradas));
     const recorrido = prepararRecorrido(trazado, paradas);
     // Pocas entradas: solo se guardan los trenes seguidos. Un null no se
     // guarda: puede que falte un archivo que llegue en la siguiente lectura.

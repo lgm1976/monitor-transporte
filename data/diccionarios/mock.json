@@ -2,6 +2,7 @@
   "fuente": "Datos simulados (horarios ficticios)",
   "generado": "2026-11-01T19:30:00+01:00",
   "ventana": ["2026-11-01", "2026-11-01"],
+  "horarioLargaDistancia": "ld-simulado",
   "formato": {
     "lineas": ["nombre", "color", "colorTexto", "grupo"],
     "viajes": ["linea", "origen", "destino", "salida", "llegada", "trazado"],
@@ -30,7 +31,10 @@
     "79009": "Molins de Rei",
     "79300": "Maçanet-Massanes",
     "79404": "Badalona",
-    "37500": "Cuenca Fernando Zóbel"
+    "37500": "Cuenca Fernando Zóbel",
+    "50500": "Córdoba-Julio Anguita",
+    "02002": "Puente Genil-Herrera",
+    "02003": "Antequera-Santa Ana"
   },
   "viajes": {
     "AVE-3092": [0, "60000", "71801", "10:30", "13:20", 2],

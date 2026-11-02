@@ -323,3 +323,45 @@ test('AlgoritmoEstimador (banco de pruebas): los trenes sin vía siguen con la a
   const p = alg.fotograma(seg(1));
   assert.ok(p.has('X') && p.has('S'));
 });
+
+test('perfilHorario: con llegada y salida (larga distancia), parado de una a otra', () => {
+  // B: llega a T0+100 s y sale a T0+160 s
+  const paradas = [PARADAS[0], { ...PARADAS[1], llegadaMs: seg(100), ms: seg(160) }, { ...PARADAS[2], llegadaMs: seg(280), ms: seg(280) }];
+  const p = perfilHorario(VIA, paradas, { paradaSeg: 30 });
+  assert.ok(Math.abs(sEnPerfil(p, seg(100)) - 2000) < 1);
+  assert.ok(Math.abs(sEnPerfil(p, seg(130)) - 2000) < 1);
+  assert.ok(Math.abs(sEnPerfil(p, seg(160)) - 2000) < 1);
+  assert.equal(velocidadEnPerfil(p, seg(130)), 0);
+  assert.ok(sEnPerfil(p, seg(220)) > 2900 && sEnPerfil(p, seg(220)) < 3100);
+  assert.deepEqual([p.paradas[1].llegada, p.paradas[1].salida], [seg(100), seg(160)]);
+});
+
+test('horarioCercanias: con estancias da también la hora de llegada', () => {
+  const fecha = '2026-11-02';
+  const nucleo = {
+    fechas: [fecha],
+    estaciones: [['A', 'A', LAT, este(0)], ['B', 'B', LAT, este(2000)], ['C', 'C', LAT, este(4000)]],
+    patrones: [[0, 1, 2]],
+    viajes: [['LD1', 0, 0, 0, 600, [10, 20], [0, 5, 0]]],
+  };
+  const base = medianocheMadridMs(fecha);
+  const paradas = horarioCercanias(nucleo, 'LD1', base + 610 * 60000);
+  assert.equal(paradas[1].ms, base + 610 * 60000);
+  assert.equal(paradas[1].llegadaMs, base + 605 * 60000);
+  assert.equal(paradas[0].llegadaMs, paradas[0].ms);
+});
+
+test('horarioDeVehiculo: larga distancia con su horario (horarioRef), salvo que se desactive', () => {
+  const nucleo = {
+    fechas: ['2026-11-02'],
+    estaciones: [['A', 'A', LAT, este(0)], ['B', 'B', LAT, este(2000)]],
+    patrones: [[0, 1]],
+    viajes: [['LD1', 0, 0, 0, 720, [2], [0, 0]]],
+  };
+  const v = { tripId: 'LD1', servicio: 'AVE', horarioRef: 'ld' };
+  const pedidos = [];
+  assert.equal(horarioDeVehiculo(v, T0, (slug) => (pedidos.push(slug), nucleo)).length, 2);
+  assert.deepEqual(pedidos, ['ld']);
+  assert.equal(horarioDeVehiculo(v, T0, () => nucleo, { largaDistancia: false }), null);
+  assert.equal(horarioDeVehiculo({ ...v, segunHorario: true }, T0, () => nucleo), null);
+});

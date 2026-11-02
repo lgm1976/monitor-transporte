@@ -80,6 +80,11 @@ export const CONFIG = {
    */
   estimador: {
     activo: true,
+    /**
+     * Larga distancia con el modelo horario (horas de paso de cada parada)
+     * en vez del de velocidad. false para volver al de velocidad.
+     */
+    horarioLargaDistancia: true,
     /** Segundos en que se recupera la diferencia con el modelo */
     correccionSeg: 15,
     /** Diferencias mayores (m) se colocan de golpe: por detrás / por delante del modelo */
@@ -245,6 +250,15 @@ export const CONFIG = {
   estacionesMapa: {
     activas: true,
     zoomMin: 13,
+  },
+
+  /**
+   * Horario completo de AV/LD/MD (hora de llegada y salida en cada parada),
+   * para las horas del recorrido, la ficha y el estimador. Un solo archivo
+   * (unos 80 KB comprimidos); se descarga cuando aparece el primer tren.
+   */
+  horariosLargaDistancia: {
+    archivo: 'data/horarios/ld.json',
   },
 
   horariosCercanias: {

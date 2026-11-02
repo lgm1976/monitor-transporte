@@ -61,6 +61,12 @@ export const AJUSTES_ESTIMADOR = {
   /** Margen (m) al comparar una posición real con el horario (redondeos, andenes largos) */
   margenHorarioM: 100,
   /**
+   * Lo mismo en larga distancia, donde también vale para saber si Renfe lo
+   * da en una estación: sus trenes y andenes miden 200-400 m y Renfe los
+   * da parados hasta a 300 m del punto de la estación (Lleida, Zaragoza…)
+   */
+  margenHorarioLargaM: 400,
+  /**
    * Una posición que exigiría ir a más de este múltiplo del tope desde la
    * anterior queda en cuarentena hasta que la siguiente la confirme
    * (Renfe a veces manda un tren al final de su línea en una sola lectura)
@@ -164,7 +170,10 @@ const indicesHorario = new WeakMap();
  * @param {object} nucleo contenido de data/horarios/cercanias/<núcleo>.json
  * @param {string} tripId
  * @param {number} ahoraMs
- * @returns {Array<{id:string, lat:number, lon:number, ms:number}>|null}
+ * En larga distancia (data/horarios/ld.json) cada viaje lleva también lo
+ * que está parado en cada estación, y la parada trae `llegadaMs`.
+ *
+ * @returns {Array<{id:string, lat:number, lon:number, ms:number, llegadaMs?:number}>|null}
  */
 export function horarioCercanias(nucleo, tripId, ahoraMs) {
   if (!nucleo?.viajes || !tripId) return null;
@@ -182,7 +191,7 @@ export function horarioCercanias(nucleo, tripId, ahoraMs) {
 
   let mejor = null;
   let mejorDistancia = Infinity;
-  for (const [, iFecha, , iPatron, salida, tramos] of candidatos) {
+  for (const [, iFecha, , iPatron, salida, tramos, estancias] of candidatos) {
     const base = medianocheMadridMs(nucleo.fechas[iFecha]);
     const inicio = base + salida * 60000;
     const fin = inicio + tramos.reduce((x, y) => x + y, 0) * 60000;
@@ -194,7 +203,9 @@ export function horarioCercanias(nucleo, tripId, ahoraMs) {
       mejor = nucleo.patrones[iPatron].map((iEstacion, k) => {
         if (k > 0) minutos += tramos[k - 1];
         const [id, , lat, lon] = nucleo.estaciones[iEstacion];
-        return { id: String(id), lat, lon, ms: base + minutos * 60000 };
+        const parada = { id: String(id), lat, lon, ms: base + minutos * 60000 };
+        if (estancias) parada.llegadaMs = parada.ms - (estancias[k] ?? 0) * 60000;
+        return parada;
       });
     }
   }
@@ -202,16 +213,21 @@ export function horarioCercanias(nucleo, tripId, ahoraMs) {
 }
 
 /**
- * Paradas con hora de un vehículo de Cercanías, para `horarioDe`.
+ * Paradas con hora de un vehículo, para `horarioDe`: en Cercanías, del
+ * horario de su núcleo; en larga distancia, del horario de AV/LD/MD
+ * (`v.horarioRef`), si `largaDistancia` no es false.
  * @param {object} v vehículo normalizado
  * @param {number} ahoraMs
  * @param {(slug:string) => object|null|undefined} nucleoDe horario del núcleo
  *        (undefined mientras se descarga)
+ * @param {{largaDistancia?: boolean}} [opciones]
  * @returns {Array|null|undefined} undefined = aún no se sabe; null = no hay
  */
-export function horarioDeVehiculo(v, ahoraMs, nucleoDe) {
-  if (v.servicio !== 'Cercanías' || !v.tripId) return null;
-  const slug = slugNucleo(v.nucleo) || v.trazadoRef?.archivo?.split('/')[1];
+export function horarioDeVehiculo(v, ahoraMs, nucleoDe, { largaDistancia = true } = {}) {
+  if (!v.tripId || v.segunHorario) return null;
+  const slug = v.servicio === 'Cercanías'
+    ? slugNucleo(v.nucleo) || v.trazadoRef?.archivo?.split('/')[1]
+    : largaDistancia ? v.horarioRef : null;
   if (!slug) return null;
   const nucleo = nucleoDe(slug);
   if (nucleo === undefined) return undefined;
@@ -224,7 +240,9 @@ export function horarioDeVehiculo(v, ahoraMs, nucleoDe) {
  * Convierte las paradas de un viaje en un perfil s(t) a trozos sobre la
  * vía: parado `paradaSeg` en cada estación intermedia (centrado en la
  * hora de paso), saliendo del origen y llegando al destino a su hora, y a
- * velocidad constante entre estaciones.
+ * velocidad constante entre estaciones. Si la parada trae `llegadaMs`
+ * anterior a `ms` (larga distancia: llega a las 8:43 y sale a las 8:51),
+ * está parado de una a otra.
  *
  * @param {object} trazado trazado preparado (trazados.js)
  * @param {Array<{lat:number, lon:number, ms:number}>} paradas en orden de paso
@@ -242,7 +260,7 @@ export function perfilHorario(trazado, paradas, { paradaSeg = AJUSTES_ESTIMADOR.
     // Una parada que no avanza (misma estación o trazado más corto) se descarta
     if (situadas.length && (proy.s <= sPrevia || p.ms < situadas[situadas.length - 1].ms)) continue;
     sPrevia = proy.s;
-    situadas.push({ s: proy.s, ms: p.ms });
+    situadas.push({ s: proy.s, ms: p.ms, llegadaMs: Number.isFinite(p.llegadaMs) ? p.llegadaMs : null });
   }
   if (situadas.length < 2) return null;
 
@@ -258,8 +276,16 @@ export function perfilHorario(trazado, paradas, { paradaSeg = AJUSTES_ESTIMADOR.
     const m = Math.min(mitad, huecoAntes / 4, huecoDespues / 4);
     // En el origen sale a su hora (la espera previa la da la retención en
     // origen); en el destino llega a su hora
-    const llegada = k === 0 ? p.ms : p.ms - m;
-    const salida = k === 0 || k === situadas.length - 1 ? p.ms : p.ms + m;
+    let llegada = k === 0 ? p.ms : p.ms - m;
+    let salida = k === 0 || k === situadas.length - 1 ? p.ms : p.ms + m;
+    if (k > 0 && p.llegadaMs !== null) {
+      if (k === situadas.length - 1) llegada = p.ms; // la hora del destino es la de llegada
+      else if (p.llegadaMs < p.ms && p.llegadaMs > situadas[k - 1].ms) {
+        // Horas de llegada y salida reales: parado entre una y otra
+        llegada = p.llegadaMs;
+        salida = p.ms;
+      }
+    }
     t.push(llegada);
     s.push(p.s);
     enParadas.push({ s: p.s, llegada, salida });
@@ -429,6 +455,7 @@ export class Estimador {
       trazado: v.trazado,
       tripId: v.tripId,
       tope: this.topeMs(v.servicio),
+      margenM: v.servicio === 'Cercanías' ? this.a.margenHorarioM : this.a.margenHorarioLargaM ?? this.a.margenHorarioM,
       s: sInicial ?? proy.s,
       tPint: ahoraMs,
       obs: [{ s: proy.s, t: tObs }],
@@ -467,7 +494,7 @@ export class Estimador {
    * estación), cualquier δ del intervalo vale y se conserva el que había.
    */
   _corregirRetraso(e, sObs, tObs) {
-    const [desde, hasta] = intervaloEnPerfil(e.perfil, sObs, this.a.margenHorarioM);
+    const [desde, hasta] = intervaloEnPerfil(e.perfil, sObs, e.margenM);
     const nuevo = acotar(e.retrasoMs, tObs - hasta, tObs - desde);
     if (!Number.isFinite(nuevo) || Math.abs(nuevo) > this.a.retrasoMaxSeg * 1000) {
       // El horario no cuadra con lo que hace el tren: modelo de velocidad
@@ -486,9 +513,12 @@ export class Estimador {
   _sigueParado(e, v, ahoraMs) {
     if (e.modelo !== 'horario' || e.sospechosa) return;
     const ultima = e.obs[e.obs.length - 1];
-    const enOrigen = ultima.s <= e.perfil.s[0] + this.a.margenHorarioM;
+    const enOrigen = ultima.s <= e.perfil.s[0] + e.margenM;
     if (!enOrigen && v.estadoParada !== 'STOPPED_AT') return;
-    const [, hasta] = intervaloEnPerfil(e.perfil, ultima.s, this.a.margenParadoM);
+    // En larga distancia, «parado» a unos cientos de metros del punto de la
+    // estación es estar en ella
+    const margen = e.margenM > this.a.margenHorarioM ? e.margenM : this.a.margenParadoM;
+    const [, hasta] = intervaloEnPerfil(e.perfil, ultima.s, margen);
     if (!Number.isFinite(hasta)) return;
     // En el origen, ni hasta la lectura siguiente: si no, saldría y se
     // pararía a unos metros (en las demás estaciones el dato de Renfe
@@ -528,12 +558,12 @@ export class Estimador {
     if (paradas?.length) {
       let n = 0;
       for (const p of paradas) {
-        if (p.s < ultima.s - this.a.margenHorarioM) continue;
-        if (p.s <= ultima.s + this.a.margenHorarioM) {
+        if (p.s < ultima.s - e.margenM) continue;
+        if (p.s <= ultima.s + e.margenM) {
           // Está en esta estación: no sale hasta que Renfe lo mueva (salvo
           // que ya se pinte pasada la estación: pararlo ahí lo dejaría
           // detenido a mitad de vía)
-          if (this.a.esperaSalidaSeg >= 0 && p !== paradas[paradas.length - 1] && e.s <= p.s + this.a.margenHorarioM) {
+          if (this.a.esperaSalidaSeg >= 0 && p !== paradas[paradas.length - 1] && e.s <= p.s + e.margenM) {
             limite = Math.min(limite, p.salida + this.a.esperaSalidaSeg * 1000);
             break;
           }

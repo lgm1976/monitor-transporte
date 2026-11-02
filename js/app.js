@@ -18,7 +18,7 @@
 
 import { CONFIG } from './config.js';
 import { pedirJson } from './utilidades/red.js';
-import { MapaTransporte, escaparHtml, htmlPildora, htmlBotonAvisos } from './modulos/mapa.js';
+import { MapaTransporte, escaparHtml, htmlPildora, htmlBotonAvisos, htmlHoraParada } from './modulos/mapa.js';
 import { ETIQUETAS_ESTADO, describirAntiguedad } from './modulos/estado.js';
 import { claveTren, buscarTren, leerEstadoUrl, escribirEstadoUrl, enlaceTren } from './modulos/filtros.js';
 import { PanelLateral } from './modulos/panel.js';
@@ -34,6 +34,8 @@ import { slugNucleo } from './modulos/recorrido.js';
 import { FuenteMock } from './fuentes/fuenteMock.js';
 import { FuenteGtfsRt } from './fuentes/fuenteGtfsRt.js';
 import { AlmacenRecorridos } from './fuentes/almacenRecorridos.js';
+import { AlmacenHorariosCercanias } from './fuentes/almacenHorariosCercanias.js';
+import { horaEnParada } from './modulos/horasParada.js';
 import { FuenteAvisos } from './fuentes/fuenteAvisos.js';
 
 /** Estado global de la aplicación (único y explícito) */
@@ -284,7 +286,9 @@ function pintarSeguimiento() {
   const servicioTexto = v.servicio === 'Cercanías' && v.nucleo ? `Cercanías ${v.nucleo}` : v.servicio;
   const sub = [servicioTexto === v.linea?.nombre ? null : servicioTexto, v.numeroTren ? `Tren ${v.numeroTren}` : null]
     .filter(Boolean).join(' · ');
-  const situacion = v.cancelado ? '' : [v.situacion, v.anden ? `andén ${v.anden}` : null].filter(Boolean).join(' · ');
+  const situacion = v.cancelado
+    ? ''
+    : [escaparHtml(v.situacion), v.anden ? `andén ${escaparHtml(v.anden)}` : null, htmlHoraParada(v) || null].filter(Boolean).join(' · ');
   let llegada = '';
   if (v.llegadaProg) {
     llegada = v.llegadaPrevista && v.llegadaPrevista !== v.llegadaProg
@@ -306,7 +310,7 @@ function pintarSeguimiento() {
       </div>
       <p class="tarjeta-titulo">${escaparHtml(v.titulo || v.etiqueta)}</p>
       <p class="tarjeta-estado" style="--c:${color}"><span class="punto"></span>${escaparHtml(v.textoRetraso ?? ETIQUETAS_ESTADO[v.estado])}</p>
-      ${situacion ? `<p class="tarjeta-texto">${escaparHtml(situacion)}</p>` : ''}
+      ${situacion ? `<p class="tarjeta-texto">${situacion}</p>` : ''}
       ${pie ? `<p class="tarjeta-pie">${pie}</p>` : ''}
       ${htmlBotonAvisos(v)}
       <div class="tarjeta-acciones">
@@ -439,6 +443,20 @@ function favoritosCambiados() {
   if (app.panelFavoritos.activo) app.panelFavoritos.pintar();
 }
 
+/**
+ * Larga distancia: hora programada (y prevista con el retraso) en la
+ * parada a la que va cada tren, sacada de su horario. La primera vez lanza
+ * la descarga del horario; los trenes la tendrán desde la lectura siguiente.
+ */
+function ponerHorasParada(vehiculos) {
+  const horarios = AlmacenHorariosCercanias.compartido();
+  for (const v of vehiculos) {
+    if (!v.horarioRef || !v.paradaId || v.cancelado) continue;
+    const horario = horarios.obtener(v.horarioRef);
+    if (horario) v.horaParada = horaEnParada(horario, [v.tripId, ...(v.viajesSolapados ?? [])], v);
+  }
+}
+
 /** Lee la fuente actual una vez */
 async function refrescar() {
   if (app.cargando) return;
@@ -446,6 +464,7 @@ async function refrescar() {
   document.body.dataset.cargando = 'true';
   try {
     const leidos = await app.fuente.leer();
+    ponerHorasParada(leidos);
     // El estimador del mapa recibe la lectura completa y devuelve los trenes
     // que faltan en ella pero sigue moviendo unos minutos (marcados `estimado`)
     const retenidos = app.mapa.registrarLectura(leidos);

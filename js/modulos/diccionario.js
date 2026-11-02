@@ -33,6 +33,12 @@ export class Diccionario {
     this.trazados = datos.trazados || [];
     this.generado = datos.generado || null;
     this.servicioPorDefecto = servicioPorDefecto;
+    /**
+     * Horario con las horas de paso de sus trenes de larga distancia (clave
+     * de AlmacenHorariosCercanias): «ld» (data/horarios/ld.json) o el que
+     * monta el modo simulado
+     */
+    this.horarioLargaDistancia = datos.horarioLargaDistancia || 'ld';
   }
 
   /** Nombre de estación o null */
@@ -189,5 +195,7 @@ export function enriquecerVehiculo(v, dicc) {
      * Las coordenadas las pone AlmacenRecorridos (red de vías).
      */
     paradasRecorrido: paradasDelTrazado(viaje?.trazado, dicc),
+    /** Horario con sus horas de paso por cada parada (solo larga distancia) */
+    horarioRef: viaje && servicio !== 'Cercanías' ? dicc.horarioLargaDistancia : null,
   };
 }

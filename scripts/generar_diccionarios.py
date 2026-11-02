@@ -49,6 +49,18 @@ Cada archivo de núcleo de horarios contiene:
                 salida en minutos, [minutos hasta cada parada siguiente]]]
 De ayer solo se guardan los viajes que siguen circulando pasada la
 medianoche. La web solo descarga el núcleo que elige el usuario.
+
+Y los horarios COMPLETOS de AV/LD/MD (hora de paso por cada parada), en
+un solo archivo con el mismo formato que un núcleo:
+
+  data/horarios/ld.json
+
+con dos diferencias: «lineas» son los tipos de tren (AVE, Alvia…) y cada
+viaje lleva un séptimo campo, los minutos que el tren está parado en cada
+estación ([0, 8, 1, …]): en larga distancia la llegada y la salida pueden
+separarse varios minutos (Atocha, Zaragoza…). Los minutos del viaje son
+siempre los de SALIDA de cada parada (la llegada en el destino), como en
+Cercanías; la llegada es la salida menos la estancia.
 Pensado para ejecutarse cada noche desde GitHub Actions.
 
 Uso:
@@ -76,6 +88,7 @@ ZONA = ZoneInfo("Europe/Madrid")
 RAIZ = Path(__file__).resolve().parent.parent
 SALIDA = RAIZ / "data" / "diccionarios"
 SALIDA_HORARIOS = RAIZ / "data" / "horarios" / "cercanias"
+SALIDA_HORARIOS_LD = RAIZ / "data" / "horarios" / "ld.json"
 SALIDA_TRAZADOS = RAIZ / "data" / "trazados" / "cercanias"
 RED_LD = RAIZ / "data" / "trazados" / "ld" / "red.json"  # generar_trazados_osm.py
 # Tolerancia de simplificación de los trazados (m). Con 5 m toda España
@@ -314,6 +327,38 @@ def slug(texto: str) -> str:
 
 def generar_horarios_cercanias(zf: zipfile.ZipFile, hoy: date) -> dict[str, dict]:
     """Horarios completos por núcleo: ayer (solo lo que cruza la medianoche), hoy y mañana."""
+    def clasificar(r: dict):
+        nucleo = NUCLEOS.get(r["route_id"][:2], "")
+        if not nucleo:
+            return None
+        return (
+            nucleo,
+            r.get("route_short_name", ""),
+            (r.get("route_color", "") or "64748B").upper(),
+            (r.get("route_text_color", "") or "FFFFFF").upper(),
+        )
+    return generar_horarios(zf, hoy, clasificar)
+
+
+def generar_horarios_ld(zf: zipfile.ZipFile, hoy: date) -> dict | None:
+    """
+    Horarios completos de AV/LD/MD (todas las paradas, con llegada y
+    salida), en un único «núcleo» Larga distancia. Las líneas son los
+    tipos de tren, sin color (Renfe no da colores útiles en LD).
+    """
+    def clasificar(r: dict):
+        tipo = TIPOS_LD.get(r.get("route_short_name", "").upper(), r.get("route_short_name", "").title())
+        return ("Larga distancia", tipo, "", "")
+    return generar_horarios(zf, hoy, clasificar, con_estancias=True).get("Larga distancia")
+
+
+def generar_horarios(zf: zipfile.ZipFile, hoy: date, clasificar, con_estancias: bool = False) -> dict[str, dict]:
+    """
+    Horarios completos agrupados por lo que diga `clasificar(ruta)`:
+    (grupo, línea, color, color de texto), o None para descartar la ruta.
+    Con `con_estancias`, cada viaje lleva además los minutos parado en
+    cada estación (salida − llegada).
+    """
     fechas = [hoy - timedelta(days=1), hoy, hoy + timedelta(days=1)]
     nombres_dia = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
@@ -337,23 +382,23 @@ def generar_horarios_cercanias(zf: zipfile.ZipFile, hoy: date) -> dict[str, dict
 
     rutas = {}
     for r in leer_csv(zf, "routes.txt"):
-        rutas[r["route_id"]] = (
-            NUCLEOS.get(r["route_id"][:2], ""),
-            r.get("route_short_name", ""),
-            (r.get("route_color", "") or "64748B").upper(),
-            (r.get("route_text_color", "") or "FFFFFF").upper(),
-        )
+        clase = clasificar(r)
+        if clase:
+            rutas[r["route_id"]] = clase
     viajes: dict[str, tuple] = {}
     for t in leer_csv(zf, "trips.txt"):
-        if fechas_servicio.get(t["service_id"]) and t["route_id"] in rutas and rutas[t["route_id"]][0]:
+        if fechas_servicio.get(t["service_id"]) and t["route_id"] in rutas:
             viajes[t["trip_id"]] = (rutas[t["route_id"]], fechas_servicio[t["service_id"]])
 
     paradas: dict[str, list] = {}
     for st in leer_csv(zf, "stop_times.txt"):  # ~300 MB, en streaming
         if st["trip_id"] in viajes:
-            minuto = a_minutos(st["departure_time"]) or a_minutos(st["arrival_time"])
+            salida = a_minutos(st["departure_time"])
+            llegada = a_minutos(st["arrival_time"])
+            minuto = salida if salida is not None else llegada
             if minuto is not None:
-                paradas.setdefault(st["trip_id"], []).append((int(st["stop_sequence"] or 0), st["stop_id"], minuto))
+                estancia = max(0, minuto - llegada) if llegada is not None else 0
+                paradas.setdefault(st["trip_id"], []).append((int(st["stop_sequence"] or 0), st["stop_id"], minuto, estancia))
 
     nombres: dict[str, str] = {}
     coordenadas: dict[str, tuple[float, float]] = {}
@@ -370,15 +415,20 @@ def generar_horarios_cercanias(zf: zipfile.ZipFile, hoy: date) -> dict[str, dict
             continue
         n = nucleos.setdefault(nucleo, {"lineas": {}, "estaciones": {}, "patrones": {}, "viajes": []})
         i_linea = n["lineas"].setdefault((linea, color, texto), len(n["lineas"]))
-        patron = tuple(n["estaciones"].setdefault(sid, len(n["estaciones"])) for _, sid, _ in lista)
+        patron = tuple(n["estaciones"].setdefault(sid, len(n["estaciones"])) for _, sid, *_ in lista)
         i_patron = n["patrones"].setdefault(patron, len(n["patrones"]))
         salida = lista[0][2]
         tramos = [b[2] - a[2] for a, b in zip(lista, lista[1:])]
+        extra = []
+        if con_estancias:
+            # La primera parada no tiene llegada útil (el tren sale de ahí)
+            estancias = [0] + [p[3] for p in lista[1:]]
+            extra = [estancias]
         for i_fecha in indices_fecha:
             # De ayer solo interesa lo que sigue circulando después de medianoche
             if i_fecha == 0 and lista[-1][2] < 1440:
                 continue
-            n["viajes"].append([trip_id, i_fecha, i_linea, i_patron, salida, tramos])
+            n["viajes"].append([trip_id, i_fecha, i_linea, i_patron, salida, tramos, *extra])
 
     generado = datetime.now(ZONA).isoformat(timespec="seconds")
     resultado = {}
@@ -396,6 +446,19 @@ def generar_horarios_cercanias(zf: zipfile.ZipFile, hoy: date) -> dict[str, dict
             "viajes": n["viajes"],
         }
     return resultado
+
+
+def guardar_horarios_ld(datos: dict | None) -> None:
+    if not datos:
+        print("  aviso: sin horarios de larga distancia", file=sys.stderr)
+        return
+    SALIDA_HORARIOS_LD.parent.mkdir(parents=True, exist_ok=True)
+    SALIDA_HORARIOS_LD.write_text(json.dumps(datos, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    print(
+        f"  horarios de larga distancia: {len(datos['viajes'])} viajes, {len(datos['estaciones'])} estaciones "
+        f"→ {SALIDA_HORARIOS_LD.relative_to(RAIZ)} ({SALIDA_HORARIOS_LD.stat().st_size / 1024:.0f} KB)",
+        file=sys.stderr,
+    )
 
 
 def caja_estaciones(datos: dict) -> list[float] | None:
@@ -621,6 +684,8 @@ def main() -> int:
             if clave == "cercanias":
                 guardar_horarios_cercanias(generar_horarios_cercanias(zf, hoy))
                 guardar_trazados_cercanias(generar_trazados_cercanias(zf, datos))
+            else:
+                guardar_horarios_ld(generar_horarios_ld(zf, hoy))
         destino = SALIDA / f"{clave}.json"
         destino.write_text(json.dumps(datos, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         print(

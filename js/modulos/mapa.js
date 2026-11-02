@@ -134,6 +134,19 @@ function textoServicio(v) {
   return v.numeroTren ? `Tren ${v.numeroTren}` : v.servicio || '';
 }
 
+/**
+ * Hora en la parada a la que va el tren (larga distancia, del horario):
+ * «llega 10:15», o con retraso «llega <s>10:15</s> 10:22»; «sale …» si
+ * Renfe lo da parado en ella. Cadena vacía si no se sabe.
+ */
+export function htmlHoraParada(v) {
+  const h = v?.horaParada;
+  if (!h || v.cancelado) return '';
+  return h.prevista
+    ? `${h.tipo} <s>${escaparHtml(h.programada)}</s> <strong>${escaparHtml(h.prevista)}</strong>`
+    : `${h.tipo} ${escaparHtml(h.programada)}`;
+}
+
 /** Ficha legible del tren (contenido del popup) */
 function htmlPopup(v, color) {
   const fila = (k, val) => (val === null || val === undefined || val === '' ? '' : `<dt>${k}</dt><dd>${escaparHtml(val)}</dd>`);
@@ -143,7 +156,13 @@ function htmlPopup(v, color) {
   const ausente = v.estimado ? describirAntiguedad(v.timestampMs ?? v.ausenteDesdeMs) : null;
 
   // Línea de situación: dónde está ahora
-  const situacion = [v.situacion, v.anden ? `andén ${v.anden}` : null, v.llegadaParada ? `${v.segunHorario ? 'hacia las' : 'prevista'} ${v.llegadaParada}` : null]
+  // En larga distancia la hora de la parada sale del horario (con el retraso)
+  const horaParada = htmlHoraParada(v);
+  const situacion = [
+    escaparHtml(v.situacion),
+    v.anden ? `andén ${escaparHtml(v.anden)}` : null,
+    horaParada || (v.llegadaParada ? `${v.segunHorario ? 'hacia las' : 'prevista'} ${escaparHtml(v.llegadaParada)}` : null),
+  ]
     .filter(Boolean)
     .join(' · ');
 
@@ -163,7 +182,7 @@ function htmlPopup(v, color) {
       <p class="ficha-titulo">${escaparHtml(v.titulo)}</p>
       <p class="ficha-estado" style="--c:${color}"><span class="punto"></span>${escaparHtml(v.textoRetraso ?? ETIQUETAS_ESTADO[v.estado])}</p>
       <ul class="ficha-datos">
-        ${v.cancelado ? '' : `<li><span class="etq">Ahora</span>${escaparHtml(situacion)}</li>`}
+        ${v.cancelado ? '' : `<li><span class="etq">Ahora</span>${situacion}</li>`}
         ${horario}
         ${v.segunHorario ? '<li class="dato-horario"><span class="etq">Posición</span>Estimada según el horario</li>' : ''}
         ${v.estimado ? `<li class="dato-viejo"><span class="etq">Posición</span>Estimada${ausente ? ` · último dato ${escaparHtml(ausente)}` : ''}</li>` : ''}
@@ -208,6 +227,11 @@ function tramoCompleto(datos) {
 export function textoParada(p, { pasada = false, retraso = 0, segunHorario = false } = {}) {
   const nombre = `<strong>${escaparHtml(p.nombre)}</strong>`;
   if (!Number.isFinite(p.minutos)) return nombre;
+  // Larga distancia: con una parada de dos minutos o más, llegada y salida
+  if (Number.isFinite(p.llegada) && p.minutos - p.llegada >= 2) {
+    const con = (min) => (retraso && !pasada ? `<s>${minutosAHora(min)}</s> ${minutosAHora(min + retraso / 60)}` : minutosAHora(min));
+    return `${nombre} · llega ${con(p.llegada)}, sale ${con(p.minutos)}`;
+  }
   const hora = minutosAHora(p.minutos);
   if (retraso && !pasada) {
     return `${nombre} · <s>${hora}</s> ${minutosAHora(p.minutos + retraso / 60)}`;
@@ -263,7 +287,11 @@ export class MapaTransporte {
      */
     const horarios = AlmacenHorariosCercanias.compartido();
     this.estimador = CONFIG.estimador?.activo
-      ? new Estimador(CONFIG.estimador, { horarioDe: (v, t) => horarioDeVehiculo(v, t, (slug) => horarios.obtener(slug)) })
+      ? new Estimador(CONFIG.estimador, {
+          horarioDe: (v, t) => horarioDeVehiculo(v, t, (slug) => horarios.obtener(slug), {
+            largaDistancia: CONFIG.estimador.horarioLargaDistancia !== false,
+          }),
+        })
       : null;
 
     const c = CONFIG.mapa;

@@ -8,11 +8,12 @@ Aplicación web estática que muestra en un mapa interactivo la posición y la p
 - **Trenes por la vía**: Cercanías con el trazado de Renfe; AVE, larga y media distancia y OUIGO con las vías de OpenStreetMap. Se deslizan por las curvas con la flecha en su sentido de marcha
 - **Grupos de trenes** con el mapa alejado: un círculo con el número de trenes y un anillo con sus estados; tocarlo acerca el mapa
 - **Filtros por servicio y núcleo**, **seguir un tren** (con su **recorrido completo** y sus paradas) y **enlace para compartirlo**
+- **Horas de paso en larga distancia**: llegada y salida en cada parada, con la hora prevista si va con retraso
 - **Trenes OUIGO según horario** (OUIGO no publica datos en tiempo real)
 - **Próximo tren** entre dos estaciones de Cercanías, con cuenta atrás y retraso en vivo
 - **Panel de estación** (próximos trenes en los dos sentidos) y **favoritos** de estaciones y trayectos; las estaciones de Cercanías se ven en el mapa al acercarse
 - **Avisos de servicio** de Renfe Cercanías (incidencias, obras y accesibilidad) en su pestaña, en la ficha de cada tren y en el panel de estación
-- **Información y novedades**: botón de la cabecera con la descripción del proyecto y lo nuevo de cada versión (versión actual: **1.9**)
+- **Información y novedades**: botón de la cabecera con la descripción del proyecto y lo nuevo de cada versión (versión actual: **1.10**)
 - Colores y umbrales de retraso definidos en `data/estilo_mapa.json`
 
 ## Estructura
@@ -31,6 +32,7 @@ js/
     trayectos.js           Próximos trenes de una estación a otra (puro, testeable)
     trazados.js            Trazados de vía: proyección, avance y red de larga distancia (puro, testeable)
     recorrido.js           Recorrido del tren seguido: paradas, hecho y pendiente (puro, testeable)
+    horasParada.js         Horas de paso de larga distancia por cada parada (puro, testeable)
     estimador.js           Dónde va cada tren en cada instante: horario o velocidad + corrección suave (puro, testeable)
     panelTrayecto.js       Pestaña «Próximo tren» del panel
     estacion.js            Próximos trenes de una estación y favoritos (puro, testeable)
@@ -53,7 +55,7 @@ js/
     fuenteAvisos.js        Avisos de servicio (feed de Renfe o simulados)
     almacenTrazados.js     Carga bajo demanda los trazados (común a todas las fuentes)
     almacenRecorridos.js   Vía y paradas del tren seguido (horarios, red de vías)
-    almacenHorariosCercanias.js  Horarios de Cercanías por núcleo y su índice, una descarga compartida
+    almacenHorariosCercanias.js  Horarios de Cercanías por núcleo y su índice, y el de larga distancia, una descarga compartida
   utilidades/
     red.js                 fetch con timeout, proxy CORS y protobuf
     geo.js                 Distancia, rumbo e interpolación (puro, testeable)
@@ -67,6 +69,7 @@ data/
     cercanias.json, ld.json, mock.json
   horarios/                Horarios (se regeneran cada noche)
     ouigo.json             OUIGO, para pintarlo según horario
+    ld.json                AV/LD/MD: todas las paradas de cada tren, con llegada y salida
     cercanias/             Todas las paradas de cada tren, un archivo por núcleo
       indice.json, madrid.json, rodalies-de-catalunya.json…  (el índice lleva la caja y los códigos de las estaciones de cada núcleo)
   trazados/cercanias/      Trazado de las vías de cada línea, un archivo por núcleo
@@ -303,7 +306,43 @@ Cada mejora que se note al usar la web **sube la versión y añade su entrada** 
 
 Las correcciones internas, los cambios de datos (la Action nocturna) y las mejoras que no cambian lo que se ve no llevan versión.
 
-Historial reconstruido a partir de los commits: 1.0 a 1.3 el 01/11/2026 (primera versión, fichas legibles y movimiento continuo, filtros y seguir un tren, OUIGO y «Próximo tren»), 1.4 a 1.9 el 02/11/2026 (trenes por la vía y recorrido, movimiento fluido, panel de estación y favoritos, avisos, grupos de trenes e información, y el ajuste del movimiento en hora punta).
+Historial reconstruido a partir de los commits: 1.0 a 1.3 el 01/11/2026 (primera versión, fichas legibles y movimiento continuo, filtros y seguir un tren, OUIGO y «Próximo tren»), 1.4 a 1.10 el 02/11/2026 (trenes por la vía y recorrido, movimiento fluido, panel de estación y favoritos, avisos, grupos de trenes e información, el ajuste del movimiento en hora punta y las horas de paso en larga distancia).
+
+## Horas de paso en larga distancia
+
+Desde la versión 1.10 (02/11/2026) los trenes de AV/LD/MD tienen la hora de llegada y salida en **cada parada**, no solo en origen y destino.
+
+**Qué se ve:**
+
+- **Recorrido del tren seguido**: cada parada con su hora. Si el tren para dos minutos o más, llegada y salida («Valladolid-Campo Grande · llega 18:52, sale 18:55»). En las que le quedan, con retraso, la programada tachada y la prevista. Las pasadas, solo la programada.
+- **Ficha y tarjeta del tren seguido**: la hora en la parada a la que va («De camino a Llodio · llega ~~22:29~~ **22:32**») o, si Renfe lo da parado en una estación intermedia, la de salida («sale 18:55»).
+- **Movimiento**: el estimador usa en larga distancia el **modelo horario** de Cercanías, con las horas reales de llegada y salida (en Cercanías se suponen 30 s de parada).
+
+**Datos.** `scripts/generar_diccionarios.py` crea `data/horarios/ld.json` con el mismo formato que un núcleo de Cercanías (`fechas`, `lineas`, `estaciones` con coordenadas, `patrones`, `viajes`), y dos diferencias: las líneas son los tipos de tren y cada viaje lleva un séptimo campo con los **minutos parado en cada estación** (`[0, 8, 1, …]`). Los minutos del viaje son siempre los de salida; la llegada es la salida menos la estancia. Un `trip_id` de Renfe circula varios días (la fecha que lleva es la del inicio de su periodo de servicio), así que, como en Cercanías, cada viaje sale una vez por fecha de la ventana. Unos 3.100 viajes y 1.000 estaciones: 312 KB, 79 KB comprimidos. Lo regenera la Action nocturna junto con los diccionarios.
+
+**En la web.**
+
+- Los vehículos de larga distancia llevan `horarioRef: 'ld'` (`enriquecerVehiculo`); `AlmacenHorariosCercanias` lo descarga una vez (`CONFIG.horariosLargaDistancia.archivo`) cuando aparece el primer tren, compartido por el estimador, el recorrido y la ficha.
+- `js/modulos/horasParada.js` (puro, con pruebas en `tests/horasParada.test.mjs`): `paradasConHora` (las paradas de un viaje con llegada y salida), `ponerHoras` (las pone en las paradas del recorrido, que es el del tren completo: primero las del viaje propio y lo que falte de sus viajes solapados) y `horaEnParada` (la de la ficha).
+- La hora prevista es la programada más el retraso actual: supone que el tren lo mantiene hasta esa parada.
+- **Modo simulado**: la fuente simulada monta un horario para el AVE Madrid → Barcelona y el MD Sevilla → Málaga coherente con dónde van y su retraso (`ld-simulado`, no se descarga), con dos minutos de parada en las intermedias; el tren simulado se para de verdad en ellas. La salida y la llegada de su ficha salen de ese horario.
+
+**Estimador.** `horarioDeVehiculo` da las paradas del horario de larga distancia (desactivable con `CONFIG.estimador.horarioLargaDistancia: false`) y `perfilHorario` usa la llegada y la salida reales de cada parada (`llegadaMs`). Además, en larga distancia el margen para dar un tren por «en la estación» es de 400 m (`margenHorarioLargaM`; 100 m en Cercanías): sus trenes y andenes miden 200-400 m y Renfe los da parados hasta a 300 m del punto de la estación (Lleida-Pirineus, por ejemplo). Con 100 m el modelo salía de la estación mientras Renfe lo daba parado en ella y había que recolocarlo kilómetros atrás.
+
+Con el horario, 161 de los 165 trenes de larga distancia de la grabación de hora punta van con el modelo horario, y su retraso efectivo queda a pocos minutos del que publica Renfe. Resultados (AV/LD/MD, modelo de velocidad → modelo horario):
+
+| | Hora punta (19 min) | Mediodía (15 min) |
+|---|---|---|
+| Trenes por encima de su tope | 5 → 5 | 2 → **0** |
+| Paradas de más de 30 s fuera de estación, por hora de tren | 0,48 → **0,27** | 0,29 → **0,22** |
+| % del tiempo parado fuera de estación | 3,1 % → 1,4 % | 1,1 % → 0,6 % |
+| Saltos por hora de tren | 4,4 → **3,7** | 3,5 → 3,7 |
+| Distancia a la última posición de Renfe: media | 1.269 → **893** m | 1.145 → **878** m |
+| Distancia a la referencia: media / p50 | 1.719 / 575 → 1.662 / 660 m | 1.422 / 525 → 1.499 / 614 m |
+
+Cercanías no cambia. Lo que mejora: menos trenes parados entre estaciones y más cerca de donde los da Renfe. El precio, como en la fase 4 de Cercanías: al esperar en las estaciones la mediana a la referencia sube unos 80 m. Las paradas «fuera de estación» que quedan son casi todas trenes esperando en una estación a más de 200 m de su punto (un Alvia con 30 minutos de parada programada a 360 m del punto de la estación cuenta como parado fuera). Los saltos siguen siendo sobre todo datos de Renfe: trenes que no mueve en minutos y luego adelanta varios kilómetros.
+
+Comprobado el 02/11/2026 en el navegador: en simulado, el MD Sevilla → Málaga con sus cinco paradas con hora («Córdoba-Julio Anguita · llega ~~22:21~~ 22:43, sale ~~22:23~~ 22:45») y la tarjeta con la próxima parada; con datos reales, el Alvia 04267 Madrid → Bilbao con sus siete paradas (las pasadas con su hora; Llodio y Bilbao con la prevista) y «De camino a Llodio · llega ~~22:29~~ 22:32». Sin errores.
 
 ## Grupos de trenes con el mapa alejado
 
@@ -340,7 +379,7 @@ De dónde salen las paradas (`js/fuentes/almacenRecorridos.js`):
 | Tren | Vía | Paradas |
 |---|---|---|
 | Cercanías | Trazado de Renfe de su línea | Horario del núcleo (`data/horarios/cercanias/`), cruzando por `trip_id`, con la hora de paso. Si el viaje no está (modo simulado, fuera de la ventana de tres días), las estaciones del núcleo que caen a menos de 120 m de su vía, sin hora |
-| AV / LD / MD | Red de OpenStreetMap | La lista de paradas del id de su recorrido (`60000-04040-71801`), con nombre del diccionario y coordenadas de `data/trazados/ld/red.json`, sin hora |
+| AV / LD / MD | Red de OpenStreetMap | La lista de paradas del id de su recorrido (`60000-04040-71801`), con nombre del diccionario y coordenadas de `data/trazados/ld/red.json`, y la hora de llegada y salida de `data/horarios/ld.json` (ver «Horas de paso en larga distancia») |
 | OUIGO | Red de OpenStreetMap | Las de su horario, con la hora de salida (de llegada en destino) |
 
 Cómo se monta (`js/modulos/recorrido.js`):
@@ -409,7 +448,7 @@ Se llega a una estación de tres maneras:
 - Tocar uno lo abre en su pestaña con todos sus trenes; la ✕ lo quita.
 - Se guardan en el navegador (`localStorage`, como mucho 20). No pasan de un dispositivo a otro; en navegación privada duran lo que la pestaña.
 
-El cálculo está en `js/modulos/estacion.js` (puro, con pruebas en `tests/estacion.test.mjs`); usa el mismo horario por núcleo que «Próximo tren», ahora descargado una sola vez para todo (`AlmacenHorariosCercanias.cargarPreparado`). Solo Cercanías: larga distancia no tiene horas de paso por las paradas intermedias (ver próximos pasos).
+El cálculo está en `js/modulos/estacion.js` (puro, con pruebas en `tests/estacion.test.mjs`); usa el mismo horario por núcleo que «Próximo tren», ahora descargado una sola vez para todo (`AlmacenHorariosCercanias.cargarPreparado`). Solo Cercanías por ahora; las horas de paso de larga distancia ya existen (`data/horarios/ld.json`), así que extenderlo es el siguiente paso natural (ver próximos pasos).
 
 Comprobado el 02/11/2026 en el navegador (modo simulado, escritorio y móvil): Atocha con sus nueve líneas y el filtro, favoritos de estación y de trayecto (Parla → Sol) con su resumen, que siguen al recargar, enlace `?red=madrid&estacion=18000` y una estación (Embajadores) abierta tocándola en el mapa.
 
@@ -558,7 +597,8 @@ Si un tren no tiene trazado, o su posición está lejos de la vía (desvíos, da
 `js/modulos/estimador.js` (módulo puro, sin Leaflet). Cada tren con vía tiene un **modelo** de dónde debería ir y una **posición pintada** que lo persigue:
 
 - **Modelo horario (Cercanías).** Con el horario del núcleo (`data/horarios/cercanias`, cruzando por `trip_id` y eligiendo la fecha de servicio que toca) se construye la distancia por la vía en función de la hora: 30 s de parada en cada estación intermedia, salida del origen y llegada al destino a su hora, velocidad constante entre estaciones. El tren va donde dice ese horario desplazado un **retraso efectivo δ**, que corrige cada posición nueva de Renfe (con 100 m de margen; si cae en una estación, vale cualquier δ del tiempo de parada y se conserva el que había). Al principio δ es el retraso del TripUpdate.
-- **Modelo de velocidad (AV/LD/MD, o Cercanías sin horario).** Desde la última posición real, a la velocidad media de los últimos 2 minutos por la vía. Un tren recién aparecido va a la mitad del tope de su servicio hasta que una segunda posición dé la real (Renfe no publica velocidad). Si Renfe lo da `STOPPED_AT`, no avanza.
+- **Modelo horario en larga distancia (desde la 1.10).** Igual que en Cercanías, con las horas de llegada y salida de `data/horarios/ld.json` (ver «Horas de paso en larga distancia»).
+- **Modelo de velocidad (AV/LD/MD sin horario, o Cercanías sin horario).** Desde la última posición real, a la velocidad media de los últimos 2 minutos por la vía. Un tren recién aparecido va a la mitad del tope de su servicio hasta que una segunda posición dé la real (Renfe no publica velocidad). Si Renfe lo da `STOPPED_AT`, no avanza.
 - **Horizonte.** Ningún modelo avanza más de 10 minutos sin una posición nueva de Renfe; pasado ese tiempo, el tren espera. En el modelo horario, además (desde la fase 4), el tren llega como mucho a la parada siguiente a la última posición real y espera en ella; y si Renfe lo da en una estación, no sale de ella hasta que lo mueva.
 - **Corrección suave.** La velocidad pintada es la del modelo más la diferencia repartida en 15 s, sin pasar del tope del servicio (con la escala real de la vía en ese punto) y sin ir nunca marcha atrás. Si va por delante, frena hasta un 25 % de la velocidad del modelo, pero no se para salvo que el modelo esté parado. Con más de 3 km por detrás o por delante se coloca directamente.
 - **Datos de Renfe que no se creen a la primera:**
@@ -710,12 +750,11 @@ Con la grabación de mediodía (15 minutos), de la fase 3 a la 4: en Cercanías,
 
 ## Próximos pasos sugeridos
 
-- Movimiento fluido, lo que queda: en Cercanías, pasar al modelo de velocidad los trenes cuyo viaje no casa con su horario (más de 10 minutos de adelanto); en larga distancia, usar las horas de paso intermedias (abajo) para un modelo horario como el de Cercanías, que es lo que más saltos quitaría.
+- Movimiento fluido, lo que queda: en Cercanías, pasar al modelo de velocidad los trenes cuyo viaje no casa con su horario (más de 10 minutos de adelanto). En larga distancia ya va con el horario (1.10); quedan los saltos que vienen de los datos de Renfe.
 - Arrancar centrado en la zona del usuario (con permiso de ubicación).
-- Panel de estación también para larga distancia (necesita las horas de paso de larga distancia, más abajo) y estaciones de larga distancia en el mapa.
+- Panel de estación también para larga distancia (las horas de paso ya están en `data/horarios/ld.json`) y estaciones de larga distancia en el mapa.
 - Ofrecer el transbordo también cuando llega antes que el directo; dos transbordos; Media Distancia.
 - Paradas del recorrido con los trenes que pasarán por ellas a lo largo del día (evolución de la fase 3).
-- Horas de paso en las paradas de larga distancia (el diccionario `ld.json` solo guarda origen y destino).
 - Avisos de servicio: marcar en el mapa las estaciones con avisos de accesibilidad, resumen de avisos en los favoritos y en «Próximo tren», y enlace con la pestaña en la URL. Revisar si Renfe vuelve a actualizar su feed de avisos (congelado desde el 07/10/2026).
 - Filtro por operador cuando haya fuentes de otros operadores.
 - Ficha deslizable desde abajo en el móvil también para el listado.

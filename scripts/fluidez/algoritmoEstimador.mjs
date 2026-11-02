@@ -7,10 +7,11 @@
  * - Los trenes que el estimador no admite (sin vía o con la posición
  *   lejos de ella) se mueven con la animación actual, como hará el mapa.
  * - Los horarios de Cercanías se leen del disco (data/horarios/cercanias)
- *   en lugar de descargarse; el mapa los pedirá por núcleo.
+ *   en lugar de descargarse; el mapa los pedirá por núcleo. El de larga
+ *   distancia (data/horarios/ld.json), con la clave «ld», si existe.
  */
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { CONFIG } from '../../js/config.js';
 import { Estimador, horarioDeVehiculo } from '../../js/modulos/estimador.js';
@@ -23,12 +24,14 @@ export function cargarHorariosCercanias(raiz) {
   for (const n of readdirSync(carpeta)) {
     if (n.endsWith('.json') && n !== 'indice.json') horarios.set(n.slice(0, -5), JSON.parse(readFileSync(join(carpeta, n), 'utf8')));
   }
+  const ld = join(raiz, 'data/horarios/ld.json');
+  if (existsSync(ld)) horarios.set('ld', JSON.parse(readFileSync(ld, 'utf8')));
   return horarios;
 }
 
 /** Función horarioDe para el estimador a partir de los horarios cargados */
-export function horarioDesde(horarios) {
-  return (v, ahoraMs) => horarioDeVehiculo(v, ahoraMs, (slug) => horarios.get(slug) ?? null);
+export function horarioDesde(horarios, opciones = {}) {
+  return (v, ahoraMs) => horarioDeVehiculo(v, ahoraMs, (slug) => horarios.get(slug) ?? null, opciones);
 }
 
 export class AlgoritmoEstimador {
@@ -38,7 +41,9 @@ export class AlgoritmoEstimador {
    */
   constructor({ raiz, ajustes = {}, horarios = null, sinHorario = false }) {
     const h = sinHorario ? null : horarios ?? cargarHorariosCercanias(raiz);
-    this.estimador = new Estimador({ ...(CONFIG.estimador || {}), ...ajustes }, { horarioDe: h ? horarioDesde(h) : null });
+    this.estimador = new Estimador({ ...(CONFIG.estimador || {}), ...ajustes }, {
+      horarioDe: h ? horarioDesde(h, { largaDistancia: (ajustes.horarioLargaDistancia ?? CONFIG.estimador?.horarioLargaDistancia) !== false }) : null,
+    });
     this.resto = new AnimacionActual();
   }
 
