@@ -217,6 +217,8 @@ export class MapaTransporte {
     this.volando = false;
     /** Aviso a app.js cuando el usuario arrastra el mapa y deja de centrarse */
     this.alSoltarSeguimiento = null;
+    /** Aviso a app.js al tocar una parada de Cercanías del recorrido ({red, estacion}) */
+    this.alElegirEstacion = null;
     /**
      * Recorrido del tren seguido: {clave, datos, color, capa, borde, hecho,
      * pendiente, puntos, s, ultimoMs, pasadas}. null si no hay.
@@ -592,9 +594,10 @@ export class MapaTransporte {
    * Dibuja el recorrido completo del tren seguido (prepararRecorrido) y lo
    * mantiene al día con su posición. Sustituye al que hubiera.
    * @param {object} datos recorrido preparado
-   * @param {{clave:string, color:string}} opciones color = el de su línea
+   * @param {{clave:string, color:string, red?:string}} opciones color = el de su
+   *   línea; red = núcleo de Cercanías (sus paradas abren el panel de estación)
    */
-  mostrarRecorrido(datos, { clave, color }) {
+  mostrarRecorrido(datos, { clave, color, red = '' }) {
     this.quitarRecorrido();
     const comun = { interactive: false, lineCap: 'round', lineJoin: 'round' };
     const capa = L.layerGroup();
@@ -616,12 +619,16 @@ export class MapaTransporte {
         bubblingMouseEvents: false,
       }).addTo(capa);
       punto.bindTooltip('', { direction: 'top', offset: [0, -6], className: 'tooltip-parada', opacity: 1 });
-      // En pantallas táctiles no hay «pasar el ratón»: tocar la abre
-      punto.on('click', () => punto.openTooltip());
+      // En pantallas táctiles no hay «pasar el ratón»: tocar la abre.
+      // En Cercanías, además, abre el panel de la estación con sus trenes.
+      punto.on('click', () => {
+        punto.openTooltip();
+        if (red && p.id) this.alElegirEstacion?.({ red, estacion: p.id });
+      });
       return punto;
     });
     capa.addTo(this.mapa);
-    this.recorrido = { clave, datos, color, capa, hecho, pendiente, puntos, s: undefined, ultimoMs: 0, pasadas: [], textos: [] };
+    this.recorrido = { clave, datos, color, red, capa, hecho, pendiente, puntos, s: undefined, ultimoMs: 0, pasadas: [], textos: [] };
     this._actualizarRecorrido(performance.now(), { forzar: true });
   }
 
@@ -670,7 +677,8 @@ export class MapaTransporte {
         r.puntos[k].setStyle({ color: pasada ? COLOR_HECHO : r.color });
         r.pasadas[k] = pasada;
       }
-      const texto = textoParada(p, { pasada, retraso, segunHorario: v?.segunHorario });
+      const texto = textoParada(p, { pasada, retraso, segunHorario: v?.segunHorario }) +
+        (r.red && p.id ? '<small>Toca para ver sus próximos trenes</small>' : '');
       if (r.textos[k] !== texto) {
         r.puntos[k].setTooltipContent(texto);
         r.textos[k] = texto;

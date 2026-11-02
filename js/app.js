@@ -12,6 +12,7 @@
  * Parámetros de URL admitidos (se pueden combinar):
  *   ?modo=real|mock  ?tren=15868  ?servicio=AVE  ?nucleo=Madrid
  *   ?red=madrid&desde=18002&hasta=70002   (abre la pestaña «Próximo tren»)
+ *   ?red=madrid&estacion=18000            (abre la pestaña «Estación»)
  */
 
 import { CONFIG } from './config.js';
@@ -21,6 +22,11 @@ import { ETIQUETAS_ESTADO, describirAntiguedad } from './modulos/estado.js';
 import { claveTren, buscarTren, leerEstadoUrl, escribirEstadoUrl, enlaceTren } from './modulos/filtros.js';
 import { PanelLateral } from './modulos/panel.js';
 import { PanelTrayecto } from './modulos/panelTrayecto.js';
+import { PanelEstacion } from './modulos/panelEstacion.js';
+import { PanelFavoritos } from './modulos/panelFavoritos.js';
+import { Favoritos } from './modulos/estacion.js';
+import { CapaEstaciones } from './modulos/capaEstaciones.js';
+import { slugNucleo } from './modulos/recorrido.js';
 import { FuenteMock } from './fuentes/fuenteMock.js';
 import { FuenteGtfsRt } from './fuentes/fuenteGtfsRt.js';
 import { AlmacenRecorridos } from './fuentes/almacenRecorridos.js';
@@ -48,10 +54,28 @@ const app = {
   recorridos: new AlmacenRecorridos(),
   /** Clave del recorrido que se está preparando (evita pedirlo dos veces) */
   recorridoPedido: null,
-  /** Pestaña del panel: 'trenes' | 'trayecto' */
+  /** Pestaña del panel: 'trenes' | 'trayecto' | 'estacion' | 'favoritos' */
   vista: 'trenes',
   trayecto: null,
+  /** Pestaña «Estación», pestaña «Favoritos» y la lista de favoritos */
+  estacion: null,
+  panelFavoritos: null,
+  favoritos: null,
+  /** Estaciones de Cercanías dibujadas en el mapa */
+  capaEstaciones: null,
 };
+
+/** Pestañas del panel lateral */
+const VISTAS = ['trenes', 'trayecto', 'estacion', 'favoritos'];
+
+/** localStorage, o null si el navegador no deja usarlo */
+function almacenLocal() {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
 
 /* ---------- Utilidades de interfaz ---------- */
 
@@ -104,14 +128,16 @@ function mostrarToast(html, ms = 2600) {
 /** Refleja en la URL el modo, el tren seguido y los filtros (sin recargar) */
 function sincronizarUrl() {
   const trayecto = app.vista === 'trayecto' && app.trayecto ? app.trayecto.valor : {};
+  const estacion = app.vista === 'estacion' && app.estacion ? app.estacion.valor : {};
   const href = escribirEstadoUrl(location.href, {
     modo: app.modo,
     tren: app.seguido?.clave ?? '',
     servicio: app.panel?.ambito.servicio ?? '',
     nucleo: app.panel?.ambito.nucleo ?? '',
-    red: trayecto.red ?? '',
+    red: trayecto.red ?? estacion.red ?? '',
     desde: trayecto.desde ?? '',
     hasta: trayecto.hasta ?? '',
+    estacion: estacion.estacion ?? '',
   });
   history.replaceState(null, '', href);
 }
@@ -204,7 +230,12 @@ function actualizarRecorrido() {
       if (app.recorridoPedido !== clave) return;
       app.recorridoPedido = null;
       if (!datos || app.mapa.idSeguido !== v.id) return;
-      app.mapa.mostrarRecorrido(datos, { clave, color: v.linea?.color || app.estilos?.theme?.accent || '#2563eb' });
+      app.mapa.mostrarRecorrido(datos, {
+        clave,
+        color: v.linea?.color || app.estilos?.theme?.accent || '#2563eb',
+        // Las paradas de Cercanías abren el panel de su estación
+        red: v.servicio === 'Cercanías' && v.nucleo ? slugNucleo(v.nucleo) : '',
+      });
     })
     .catch((error) => {
       console.warn('[recorrido] no se pudo preparar:', error);
@@ -291,21 +322,50 @@ function renderizar() {
   app.mapa.actualizar(visibles);
   app.panel.actualizar(app.vehiculos, visibles);
   app.trayecto?.actualizar(app.vehiculos);
+  app.estacion?.actualizar(app.vehiculos);
+  app.panelFavoritos?.actualizar(app.vehiculos);
   actualizarRecorrido();
   pintarSeguimiento();
 }
 
 /** Cambia de pestaña en el panel lateral */
 function cambiarVista(vista) {
-  app.vista = vista === 'trayecto' ? 'trayecto' : 'trenes';
+  app.vista = VISTAS.includes(vista) ? vista : 'trenes';
   for (const b of document.querySelectorAll('.pestanas [data-vista]')) {
     b.setAttribute('aria-selected', String(b.dataset.vista === app.vista));
   }
-  $('vista-trenes').hidden = app.vista !== 'trenes';
-  $('vista-trayecto').hidden = app.vista !== 'trayecto';
-  if (app.vista === 'trayecto') app.trayecto.activar(app.panel.ambito.nucleo);
-  else app.trayecto.desactivar();
+  for (const v of VISTAS) $(`vista-${v}`).hidden = app.vista !== v;
+  const paneles = { trayecto: app.trayecto, estacion: app.estacion, favoritos: app.panelFavoritos };
+  for (const [v, panel] of Object.entries(paneles)) {
+    if (v === app.vista) panel.activar(app.panel.ambito.nucleo);
+    else if (panel.activo) panel.desactivar();
+  }
   sincronizarUrl();
+}
+
+/** Abre el panel de una estación (desde el mapa, una parada del recorrido o un favorito) */
+function abrirEstacion({ red, estacion }) {
+  app.estacion.abrir({ red, estacion });
+  if (app.vista === 'estacion') app.estacion.activar();
+  else cambiarVista('estacion');
+  plegarPanel(false);
+}
+
+/** Abre un favorito en su pestaña */
+function abrirFavorito(f) {
+  if (f.tipo === 'estacion') {
+    abrirEstacion({ red: f.red, estacion: f.estacion });
+    return;
+  }
+  app.trayecto.abrir({ red: f.red, desde: f.desde, hasta: f.hasta });
+  cambiarVista('trayecto');
+}
+
+/** Tras añadir o quitar un favorito, las estrellas y la lista se ponen al día */
+function favoritosCambiados() {
+  app.estacion.refrescarFavorito();
+  app.trayecto.refrescarFavorito();
+  if (app.panelFavoritos.activo) app.panelFavoritos.pintar();
 }
 
 /** Lee la fuente actual una vez */
@@ -439,6 +499,8 @@ function conectarControles() {
 
   // Al arrastrar el mapa se deja de centrar en el tren (se ofrece «Centrar»)
   app.mapa.alSoltarSeguimiento = soltarCentrado;
+  // Tocar una parada de Cercanías del recorrido abre el panel de su estación
+  app.mapa.alElegirEstacion = abrirEstacion;
 
   // Pestañas del panel
   document.querySelector('.pestanas').addEventListener('click', (e) => {
@@ -492,11 +554,35 @@ async function iniciar() {
     },
     ambito: { servicio: estadoUrl.servicio, nucleo: estadoUrl.nucleo },
   });
+  app.favoritos = new Favoritos(almacenLocal());
   app.trayecto = new PanelTrayecto({
     // «Ver en el mapa» sigue el tren (en el móvil pliega el panel)
     alVerEnMapa: (id) => seguirTren(id),
     alCambiar: sincronizarUrl,
-    inicial: { red: estadoUrl.red, desde: estadoUrl.desde, hasta: estadoUrl.hasta },
+    inicial: estadoUrl.estacion ? {} : { red: estadoUrl.red, desde: estadoUrl.desde, hasta: estadoUrl.hasta },
+    favoritos: app.favoritos,
+  });
+  app.trayecto.alCambiarFavoritos = favoritosCambiados;
+  app.capaEstaciones = new CapaEstaciones(app.mapa.mapa, {
+    alElegir: abrirEstacion,
+    color: app.estilos.theme?.accent || '#2563eb',
+  });
+  app.estacion = new PanelEstacion({
+    alVerEnMapa: (id) => seguirTren(id),
+    alMostrarEstacion: (e, { volar = false } = {}) => {
+      app.capaEstaciones.marcar(e, { volar });
+      // En el móvil, «Ver en el mapa» pliega el panel para dejar ver la estación
+      if (volar && window.matchMedia('(max-width: 767px)').matches) plegarPanel(true);
+    },
+    alCambiar: sincronizarUrl,
+    favoritos: app.favoritos,
+    inicial: estadoUrl.estacion ? { red: estadoUrl.red, estacion: estadoUrl.estacion } : {},
+  });
+  app.estacion.alCambiarFavoritos = favoritosCambiados;
+  app.panelFavoritos = new PanelFavoritos({
+    favoritos: app.favoritos,
+    alAbrir: abrirFavorito,
+    alCambiar: favoritosCambiados,
   });
 
   const u = app.estilos.delay_thresholds_minutes;
@@ -510,8 +596,11 @@ async function iniciar() {
     document.body.dataset.panel = 'cerrado';
     $('btn-panel').setAttribute('aria-expanded', 'false');
   }
-  // Un enlace con trayecto abre directamente la pestaña «Próximo tren»
-  if (estadoUrl.desde || estadoUrl.hasta || estadoUrl.red) {
+  // Un enlace con estación abre la pestaña «Estación»; con trayecto, «Próximo tren»
+  if (estadoUrl.estacion) {
+    cambiarVista('estacion');
+    plegarPanel(false);
+  } else if (estadoUrl.desde || estadoUrl.hasta || estadoUrl.red) {
     cambiarVista('trayecto');
     plegarPanel(false);
   }

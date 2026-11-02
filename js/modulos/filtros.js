@@ -108,6 +108,8 @@ export function leerEstadoUrl(busqueda) {
     red: p.get('red') || '',
     desde: p.get('desde') || '',
     hasta: p.get('hasta') || '',
+    // Pestaña «Estación»: núcleo (red) y estación
+    estacion: p.get('estacion') || '',
   };
 }
 
@@ -119,7 +121,7 @@ export function leerEstadoUrl(busqueda) {
  */
 export function escribirEstadoUrl(href, estado) {
   const url = new URL(href);
-  for (const clave of ['modo', 'tren', 'servicio', 'nucleo', 'red', 'desde', 'hasta']) {
+  for (const clave of ['modo', 'tren', 'servicio', 'nucleo', 'red', 'desde', 'hasta', 'estacion']) {
     if (!(clave in estado)) continue;
     if (estado[clave]) url.searchParams.set(clave, estado[clave]);
     else url.searchParams.delete(clave);

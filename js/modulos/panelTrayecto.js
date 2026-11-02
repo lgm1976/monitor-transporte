@@ -11,13 +11,13 @@
  */
 
 import { CONFIG } from '../config.js';
-import { pedirJson } from '../utilidades/red.js';
 import { escaparHtml } from './mapa.js';
 import { normalizarTexto } from './panel.js';
 import {
-  prepararNucleo, proximosTrenes, proximosConTransbordo, lineasDelTrayecto, estacionesOrdenadas,
+  proximosTrenes, proximosConTransbordo, lineasDelTrayecto, estacionesOrdenadas,
   textoFaltan, textoDuracion, TRANSBORDO_MIN,
 } from './trayectos.js';
+import { AlmacenHorariosCercanias } from '../fuentes/almacenHorariosCercanias.js';
 
 const CLAVE_GUARDADO = 'monitor-transporte:trayecto';
 /** Cada cuánto se recalcula la cuenta atrás aunque no lleguen datos nuevos */
@@ -44,12 +44,14 @@ export class PanelTrayecto {
    * @param {(idVehiculo:string)=>void} opciones.alVerEnMapa
    * @param {()=>void} opciones.alCambiar cambia el trayecto (para la URL)
    * @param {{red?:string, desde?:string, hasta?:string}} [opciones.inicial] de la URL
+   * @param {import('./estacion.js').Favoritos} [opciones.favoritos] para la estrella del trayecto
    */
-  constructor({ alVerEnMapa, alCambiar, inicial = {} }) {
+  constructor({ alVerEnMapa, alCambiar, inicial = {}, favoritos = null }) {
     this.alVerEnMapa = alVerEnMapa;
     this.alCambiar = alCambiar;
-    this.indice = null; // [{nucleo, archivo}]
-    this.cache = new Map(); // archivo → núcleo preparado (o promesa)
+    this.favoritos = favoritos;
+    this.indice = null; // [{nucleo, archivo, slug}]
+    this.horarios = AlmacenHorariosCercanias.compartido();
     this.nucleo = null;
     this.estaciones = []; // [{id, nombre}] del núcleo actual
     const guardado = leerGuardado();
@@ -66,6 +68,8 @@ export class PanelTrayecto {
     this.elLista = document.getElementById('lista-estaciones');
     this.elResultados = document.getElementById('trayecto-resultados');
     this.elLineas = document.getElementById('trayecto-lineas');
+    this.elFavorito = document.getElementById('trayecto-favorito');
+    this.elFavorito?.addEventListener('click', () => this._alternarFavorito());
 
     this.elRed.addEventListener('change', () => this._cambiarRed(this.elRed.value));
     for (const [el, campo] of [[this.elDesde, 'desde'], [this.elHasta, 'hasta']]) {
@@ -90,21 +94,27 @@ export class PanelTrayecto {
     return { ...this.estado };
   }
 
+  /** Abre un trayecto concreto (desde un favorito) */
+  async abrir({ red, desde, hasta }) {
+    this.estado = { red, desde, hasta };
+    if (this.activo) await this.activar();
+  }
+
   /** Carga el índice de núcleos (una vez) y el núcleo elegido */
   async activar(nucleoSugerido = '') {
     this.activo = true;
     if (!this.indice) {
       try {
-        this.indice = (await pedirJson(CONFIG.horariosCercanias.indice)).nucleos;
+        this.indice = await this.horarios.indice();
       } catch (error) {
         this.elResultados.innerHTML = `<p class="trayecto-vacio">No se pudieron cargar los horarios de Cercanías (${escaparHtml(error.message)}).</p>`;
         return;
       }
       this.elRed.innerHTML = this.indice
-        .map((n) => `<option value="${escaparHtml(n.archivo.replace('.json', ''))}">${escaparHtml(n.nucleo)}</option>`)
+        .map((n) => `<option value="${escaparHtml(n.slug)}">${escaparHtml(n.nucleo)}</option>`)
         .join('');
     }
-    const sugerido = this.indice.find((n) => n.nucleo === nucleoSugerido)?.archivo.replace('.json', '');
+    const sugerido = this.indice.find((n) => n.nucleo === nucleoSugerido)?.slug;
     const red = this.estado.red || sugerido || CONFIG.horariosCercanias.nucleoPorDefecto;
     await this._cambiarRed(red);
   }
@@ -114,27 +124,21 @@ export class PanelTrayecto {
   }
 
   async _cambiarRed(red) {
-    const entrada = this.indice.find((n) => n.archivo === `${red}.json`) || this.indice[0];
-    red = entrada.archivo.replace('.json', '');
+    const entrada = this.indice.find((n) => n.slug === red) || this.indice[0];
+    red = entrada.slug;
     this.elRed.value = red;
     // Las estaciones de un núcleo no valen en otro
     if (this.estado.red && red !== this.estado.red) this.estado.desde = this.estado.hasta = '';
     this.estado.red = red;
     this.elResultados.innerHTML = '<p class="trayecto-vacio">Cargando horarios…</p>';
-    try {
-      if (!this.cache.has(entrada.archivo)) {
-        this.cache.set(
-          entrada.archivo,
-          pedirJson(`${CONFIG.horariosCercanias.carpeta}${entrada.archivo}`).then(prepararNucleo)
-        );
-      }
-      this.nucleo = await this.cache.get(entrada.archivo);
-    } catch (error) {
-      this.cache.delete(entrada.archivo);
+    const nucleo = await this.horarios.cargarPreparado(red);
+    if (this.estado.red !== red) return; // el usuario cambió de núcleo mientras cargaba
+    if (!nucleo) {
       this.elResultados.innerHTML = `<p class="trayecto-vacio">No se pudo cargar el horario de ${escaparHtml(entrada.nucleo)}.</p>`;
       return;
     }
-    if (this.estado.red !== red) return; // el usuario cambió de núcleo mientras cargaba
+    this.nucleo = nucleo;
+    this.nombreNucleo = entrada.nucleo;
     this.estaciones = estacionesOrdenadas(this.nucleo);
     this.elLista.innerHTML = this.estaciones.map((e) => `<option value="${escaparHtml(e.nombre)}"></option>`).join('');
     this._pintarCampos();
@@ -171,8 +175,40 @@ export class PanelTrayecto {
     this.elDesde.dataset.invalido = this.elHasta.dataset.invalido = 'false';
   }
 
+  /** Favorito que representa el trayecto elegido (o null si está incompleto) */
+  _favoritoActual() {
+    const { red, desde, hasta } = this.estado;
+    if (!red || !desde || !hasta || desde === hasta) return null;
+    return { tipo: 'trayecto', red, nucleo: this.nombreNucleo, desde, hasta, nombre: `${this._nombre(desde)} → ${this._nombre(hasta)}` };
+  }
+
+  /** Repinta la estrella (p. ej. si se quitó el favorito desde la pestaña Favoritos) */
+  refrescarFavorito() {
+    this._pintarFavorito();
+  }
+
+  _alternarFavorito() {
+    const f = this._favoritoActual();
+    if (!f || !this.favoritos) return;
+    this.favoritos.alternar(f);
+    this._pintarFavorito();
+    this.alCambiarFavoritos?.();
+  }
+
+  /** Estrella: visible con un trayecto completo, rellena si ya es favorito */
+  _pintarFavorito() {
+    if (!this.elFavorito) return;
+    const f = this._favoritoActual();
+    this.elFavorito.hidden = !f || !this.favoritos;
+    const es = Boolean(f && this.favoritos?.tiene(f));
+    this.elFavorito.setAttribute('aria-pressed', String(es));
+    this.elFavorito.title = es ? 'Quitar de favoritos' : 'Guardar en favoritos';
+    this.elFavorito.querySelector('.texto-favorito').textContent = es ? 'En favoritos' : 'Guardar trayecto';
+  }
+
   _cambio() {
     if (this.estado.red && this.estado.desde && this.estado.hasta) guardar(this.estado);
+    this._pintarFavorito();
     this._pintarResultados();
     this.alCambiar?.();
   }

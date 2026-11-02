@@ -9,6 +9,7 @@ Aplicación web estática que muestra en un mapa interactivo la posición y la p
 - **Filtros por servicio y núcleo**, **seguir un tren** (con su **recorrido completo** y sus paradas) y **enlace para compartirlo**
 - **Trenes OUIGO según horario** (OUIGO no publica datos en tiempo real)
 - **Próximo tren** entre dos estaciones de Cercanías, con cuenta atrás y retraso en vivo
+- **Panel de estación** (próximos trenes en los dos sentidos) y **favoritos** de estaciones y trayectos; las estaciones de Cercanías se ven en el mapa al acercarse
 - Colores y umbrales de retraso definidos en `data/estilo_mapa.json`
 
 ## Estructura
@@ -29,6 +30,10 @@ js/
     recorrido.js           Recorrido del tren seguido: paradas, hecho y pendiente (puro, testeable)
     estimador.js           Dónde va cada tren en cada instante: horario o velocidad + corrección suave (puro, testeable)
     panelTrayecto.js       Pestaña «Próximo tren» del panel
+    estacion.js            Próximos trenes de una estación y favoritos (puro, testeable)
+    panelEstacion.js       Pestaña «Estación» del panel
+    panelFavoritos.js      Pestaña «Favoritos» (★) del panel
+    capaEstaciones.js      Estaciones de Cercanías en el mapa
     normalizador.js        GTFS-RT → modelo interno (puro, testeable)
     solapados.js           Un marcador por tren aunque el feed lo repita en varios viajes (puro, testeable)
     mapa.js                Leaflet: marcadores, movimiento continuo, fichas, leyenda
@@ -39,7 +44,7 @@ js/
     fuenteHorario.js       Trenes según horario (OUIGO), en los dos modos
     almacenTrazados.js     Carga bajo demanda los trazados (común a todas las fuentes)
     almacenRecorridos.js   Vía y paradas del tren seguido (horarios, red de vías)
-    almacenHorariosCercanias.js  Horarios de Cercanías por núcleo, una descarga compartida
+    almacenHorariosCercanias.js  Horarios de Cercanías por núcleo y su índice, una descarga compartida
   utilidades/
     red.js                 fetch con timeout, proxy CORS y protobuf
     geo.js                 Distancia, rumbo e interpolación (puro, testeable)
@@ -52,7 +57,7 @@ data/
   horarios/                Horarios (se regeneran cada noche)
     ouigo.json             OUIGO, para pintarlo según horario
     cercanias/             Todas las paradas de cada tren, un archivo por núcleo
-      indice.json, madrid.json, rodalies-de-catalunya.json…
+      indice.json, madrid.json, rodalies-de-catalunya.json…  (el índice lleva la caja de estaciones de cada núcleo)
   trazados/cercanias/      Trazado de las vías de cada línea, un archivo por núcleo
   trazados/ld/red.json     Vías de larga distancia y OUIGO (OpenStreetMap)
 scripts/
@@ -257,6 +262,8 @@ La URL refleja siempre el estado, así que también se pueden guardar vistas en 
 | `tren` | `15868` | Sigue ese tren al abrir |
 | `servicio` | `AVE` | Filtra por tipo de servicio |
 | `nucleo` | `Madrid` | Filtra por núcleo de Cercanías |
+| `red` + `desde` + `hasta` | `madrid`, `18002`, `70002` | Abre «Próximo tren» con ese trayecto |
+| `red` + `estacion` | `madrid`, `18000` | Abre «Estación» con esa estación |
 
 En el modo simulado los trenes C4 y R1 tienen núcleo (Madrid y Rodalies de Catalunya) para poder probar el filtro: en `data/diccionarios/mock.json` el grupo de la línea se escribe «Cercanías Madrid».
 
@@ -317,6 +324,34 @@ El trayecto queda en la URL, así que se puede guardar en favoritos o en la pant
 - Solo se ofrece cuando no hay tren directo. Se calcula en el navegador en menos de 15 ms.
 
 Límites: como mucho un transbordo y siempre dentro del mismo núcleo de Cercanías. El cambio se considera en la misma estación (no entre estaciones distintas cercanas, como Sol y otra) y no se tienen en cuenta otros operadores ni el metro.
+
+## Panel de estación y favoritos
+
+Pestaña **«Estación»** del panel lateral (desde el 02/11/2026). Eliges núcleo de Cercanías y estación (con autocompletado) y ves los **próximos 12 trenes que pasan por ella en los dos sentidos**:
+
+- Línea, hacia dónde va, cuánto falta («en 4 min», «en el andén» si Renfe lo da parado allí), hora de paso y número de tren.
+- **Retraso en vivo** de los que ya circulan (hora programada tachada y la prevista); el resto, «Según horario». Los cancelados, tachados; los que terminan en la estación, en gris con «Termina aquí · viene de…»; los que empiezan, «sale de aquí».
+- **Andén**, cuando Renfe da el tren llegando o parado en esa estación (sale de la etiqueta del feed, `C3-18779-PLATF.(2)`).
+- **Filtro por línea**: pastillas con las líneas que pasan por ella en las próximas horas (no las que solo tienen algún tren suelto en el horario: la C1 pasa por Atocha cuatro veces en tres días). Pulsar una deja solo esa; pulsarla otra vez, todas.
+- **Ver en el mapa** vuela hasta la estación y la señala con un anillo; «Ver en el mapa» de cada tren lo sigue.
+- La cuenta atrás se refresca con cada lectura y, como mínimo, cada 20 s. El navegador recuerda la última estación.
+
+Se llega a una estación de tres maneras:
+
+1. Desde la pestaña, eligiéndola.
+2. **Tocándola en el mapa**: a partir del zoom 13 (`CONFIG.estacionesMapa.zoomMin`) se dibujan las estaciones de Cercanías como puntos blancos, con su nombre al pasar el ratón. Solo se descargan los horarios de los núcleos cuya caja de estaciones (`caja` en `indice.json`, la calcula `generar_diccionarios.py`) cae en la vista; en modo real ya están todos, porque los usa el estimador.
+3. **Tocando una parada del recorrido** del tren seguido, si es de Cercanías (el texto de la parada lo indica).
+
+**Favoritos** (pestaña ★):
+
+- En «Estación», **☆ Guardar estación**; en «Próximo tren», **☆ Guardar trayecto** (aparece con origen y destino elegidos). Pulsar otra vez lo quita.
+- La pestaña ★ los lista con un **resumen en vivo**: en una estación, los dos próximos trenes («C4a hacia Alcobendas en 3 min · C5 hacia Fuenlabrada en 7 min»); en un trayecto, el próximo tren y su **hora prevista de llegada** («C4b en 5 min · llega 17:44», con el retraso si lo lleva, o la combinación con transbordo si no hay directo).
+- Tocar uno lo abre en su pestaña con todos sus trenes; la ✕ lo quita.
+- Se guardan en el navegador (`localStorage`, como mucho 20). No pasan de un dispositivo a otro; en navegación privada duran lo que la pestaña.
+
+El cálculo está en `js/modulos/estacion.js` (puro, con pruebas en `tests/estacion.test.mjs`); usa el mismo horario por núcleo que «Próximo tren», ahora descargado una sola vez para todo (`AlmacenHorariosCercanias.cargarPreparado`). Solo Cercanías: larga distancia no tiene horas de paso por las paradas intermedias (ver próximos pasos).
+
+Comprobado el 02/11/2026 en el navegador (modo simulado, escritorio y móvil): Atocha con sus nueve líneas y el filtro, favoritos de estación y de trayecto (Parla → Sol) con su resumen, que siguen al recargar, enlace `?red=madrid&estacion=18000` y una estación (Embajadores) abierta tocándola en el mapa.
 
 ## Trenes OUIGO según horario
 
@@ -552,7 +587,7 @@ Ajustes probados con el banco (`--ajustes`): corregir en 8, 10 o 25 s, colocar a
 - Movimiento fluido de los trenes: fase 4, medición y ajuste (ver el plan anterior; es lo siguiente). Grabar una serie nueva en hora punta, repetir el banco de pruebas, revisar en el navegador los trenes que aún se colocan de golpe y los que quedan parados fuera de estación, y decidir si los trenes que terminan viaje (Renfe les cambia el id) deben quitarse antes de los 3 minutos.
 - Agrupar marcadores (Leaflet.markercluster) al ver toda España con los dos feeds de Renfe.
 - Arrancar centrado en la zona del usuario (con permiso de ubicación).
-- Panel de estación con próximas llegadas y favoritos («mi C-4 de cada mañana»).
+- Panel de estación también para larga distancia (necesita las horas de paso de larga distancia, más abajo) y estaciones de larga distancia en el mapa.
 - Ofrecer el transbordo también cuando llega antes que el directo; dos transbordos; Media Distancia.
 - Paradas del recorrido con los trenes que pasarán por ellas a lo largo del día (evolución de la fase 3).
 - Horas de paso en las paradas de larga distancia (el diccionario `ld.json` solo guarda origen y destino).

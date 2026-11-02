@@ -60,11 +60,16 @@ test('resumen de puntualidad', () => {
 
 test('estado en la URL', () => {
   assert.deepEqual(leerEstadoUrl('?modo=real&tren=15868&nucleo=Madrid'), {
-    modo: 'real', tren: '15868', servicio: '', nucleo: 'Madrid', red: '', desde: '', hasta: '',
+    modo: 'real', tren: '15868', servicio: '', nucleo: 'Madrid', red: '', desde: '', hasta: '', estacion: '',
   });
   assert.deepEqual(leerEstadoUrl('?red=madrid&desde=18002&hasta=70002'), {
-    modo: '', tren: '', servicio: '', nucleo: '', red: 'madrid', desde: '18002', hasta: '70002',
+    modo: '', tren: '', servicio: '', nucleo: '', red: 'madrid', desde: '18002', hasta: '70002', estacion: '',
   });
+  assert.equal(leerEstadoUrl('?red=madrid&estacion=18000').estacion, '18000');
+  assert.equal(
+    escribirEstadoUrl('https://luis.github.io/monitor/?red=madrid&desde=1&hasta=2', { red: 'madrid', desde: '', hasta: '', estacion: '18000' }),
+    'https://luis.github.io/monitor/?red=madrid&estacion=18000'
+  );
   const base = 'https://luis.github.io/monitor/?modo=mock&tren=1';
   assert.equal(
     escribirEstadoUrl(base, { modo: 'real', tren: '', servicio: 'AVE', nucleo: '' }),

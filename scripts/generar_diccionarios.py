@@ -27,7 +27,7 @@ Solo se incluyen los viajes que circulan en una ventana corta de días
 Además genera los horarios COMPLETOS de Cercanías (todas las paradas
 de cada tren), un archivo por núcleo, para la pestaña «Próximo tren»:
 
-  data/horarios/cercanias/indice.json      núcleos disponibles
+  data/horarios/cercanias/indice.json      núcleos disponibles (con la caja de sus estaciones)
   data/horarios/cercanias/<núcleo>.json    p. ej. madrid.json
 
 Y los TRAZADOS de las líneas de Cercanías (shapes.txt), simplificados,
@@ -398,6 +398,17 @@ def generar_horarios_cercanias(zf: zipfile.ZipFile, hoy: date) -> dict[str, dict
     return resultado
 
 
+def caja_estaciones(datos: dict) -> list[float] | None:
+    """[lat mín, lon mín, lat máx, lon máx] de las estaciones del núcleo.
+    La web la usa para saber qué núcleos caen en la vista del mapa y
+    descargar solo esos al dibujar las estaciones."""
+    coords = [(e[2], e[3]) for e in datos["estaciones"] if len(e) >= 4 and e[2] is not None and e[3] is not None]
+    if not coords:
+        return None
+    lats, lons = [c[0] for c in coords], [c[1] for c in coords]
+    return [round(min(lats), 4), round(min(lons), 4), round(max(lats), 4), round(max(lons), 4)]
+
+
 def guardar_horarios_cercanias(horarios: dict[str, dict]) -> None:
     SALIDA_HORARIOS.mkdir(parents=True, exist_ok=True)
     indice = []
@@ -405,7 +416,10 @@ def guardar_horarios_cercanias(horarios: dict[str, dict]) -> None:
         datos = horarios[nucleo]
         archivo = f"{slug(nucleo)}.json"
         (SALIDA_HORARIOS / archivo).write_text(json.dumps(datos, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-        indice.append({"nucleo": nucleo, "archivo": archivo, "estaciones": len(datos["estaciones"]), "viajes": len(datos["viajes"])})
+        indice.append({
+            "nucleo": nucleo, "archivo": archivo, "estaciones": len(datos["estaciones"]), "viajes": len(datos["viajes"]),
+            "caja": caja_estaciones(datos),
+        })
     (SALIDA_HORARIOS / "indice.json").write_text(
         json.dumps({"generado": datetime.now(ZONA).isoformat(timespec="seconds"), "nucleos": indice}, ensure_ascii=False, indent=1),
         encoding="utf-8",

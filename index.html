@@ -59,7 +59,43 @@
         <div class="pestanas" role="tablist" aria-label="Vistas del panel">
           <button type="button" role="tab" id="pestana-trenes" data-vista="trenes" aria-selected="true" aria-controls="vista-trenes">Trenes</button>
           <button type="button" role="tab" id="pestana-trayecto" data-vista="trayecto" aria-selected="false" aria-controls="vista-trayecto">Próximo tren</button>
+          <button type="button" role="tab" id="pestana-estacion" data-vista="estacion" aria-selected="false" aria-controls="vista-estacion">Estación</button>
+          <button type="button" role="tab" id="pestana-favoritos" data-vista="favoritos" aria-selected="false" aria-controls="vista-favoritos" title="Favoritos" aria-label="Favoritos" class="pestana-icono">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8z"/></svg>
+          </button>
         </div>
+
+        <!-- Vista «Estación»: próximos trenes que pasan por una estación -->
+        <section id="vista-estacion" role="tabpanel" aria-labelledby="pestana-estacion" hidden class="flex min-h-0 flex-1 flex-col">
+          <div class="space-y-2 border-b border-slate-200 p-4">
+            <label class="block">
+              <span class="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Cercanías de</span>
+              <select id="estacion-red" class="selector"></select>
+            </label>
+            <label class="block">
+              <span class="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Estación</span>
+              <input id="estacion-nombre" class="campo" list="lista-estaciones-estacion" autocomplete="off" placeholder="Escribe o toca una estación en el mapa" />
+            </label>
+            <datalist id="lista-estaciones-estacion"></datalist>
+            <div class="acciones-estacion">
+              <button id="estacion-favorito" type="button" class="boton-favorito" aria-pressed="false" hidden>
+                <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8z"/></svg>
+                <span class="texto-favorito">Guardar estación</span>
+              </button>
+              <button id="estacion-ver" type="button" class="trayecto-ver" hidden>Ver en el mapa</button>
+            </div>
+            <p id="estacion-lineas" class="trayecto-lineas"></p>
+          </div>
+          <ul id="estacion-resultados" class="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto" aria-live="polite"></ul>
+          <p class="trayecto-nota">Trenes de los dos sentidos. Retraso en vivo de los que ya circulan; el resto, según horario. El andén aparece cuando Renfe da el tren llegando a la estación.</p>
+        </section>
+
+        <!-- Vista «Favoritos»: estaciones y trayectos guardados -->
+        <section id="vista-favoritos" role="tabpanel" aria-labelledby="pestana-favoritos" hidden class="flex min-h-0 flex-1 flex-col">
+          <h2 class="favoritos-titulo">Favoritos</h2>
+          <ul id="favoritos-lista" class="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto" aria-live="polite"></ul>
+          <p class="trayecto-nota">Se guardan en este navegador. Toca uno para ver todos sus trenes.</p>
+        </section>
 
         <!-- Vista «Próximo tren»: de una estación a otra -->
         <section id="vista-trayecto" role="tabpanel" aria-labelledby="pestana-trayecto" hidden class="flex min-h-0 flex-1 flex-col">
@@ -82,6 +118,12 @@
               </label>
             </div>
             <datalist id="lista-estaciones"></datalist>
+            <div class="acciones-estacion">
+              <button id="trayecto-favorito" type="button" class="boton-favorito" aria-pressed="false" hidden>
+                <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8z"/></svg>
+                <span class="texto-favorito">Guardar trayecto</span>
+              </button>
+            </div>
             <p id="trayecto-lineas" class="trayecto-lineas"></p>
           </div>
           <ul id="trayecto-resultados" class="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto" aria-live="polite"></ul>

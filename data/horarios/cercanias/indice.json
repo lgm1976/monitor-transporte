@@ -5,91 +5,181 @@
    "nucleo": "Asturias",
    "archivo": "asturias.json",
    "estaciones": 148,
-   "viajes": 779
+   "viajes": 779,
+   "caja": [
+    43.0716,
+    -6.1519,
+    43.5895,
+    -5.3606
+   ]
   },
   {
    "nucleo": "Bilbao",
    "archivo": "bilbao.json",
    "estaciones": 112,
-   "viajes": 720
+   "viajes": 720,
+   "caja": [
+    42.6161,
+    -5.5661,
+    43.3287,
+    -2.8824
+   ]
   },
   {
    "nucleo": "Cádiz",
    "archivo": "cadiz.json",
    "estaciones": 30,
-   "viajes": 216
+   "viajes": 216,
+   "caja": [
+    36.4088,
+    -6.288,
+    36.7516,
+    -6.0659
+   ]
   },
   {
    "nucleo": "Cartagena",
    "archivo": "cartagena.json",
    "estaciones": 15,
-   "viajes": 88
+   "viajes": 88,
+   "caja": [
+    37.6036,
+    -0.9773,
+    37.6518,
+    -0.7879
+   ]
   },
   {
    "nucleo": "Ferrol",
    "archivo": "ferrol.json",
    "estaciones": 24,
-   "viajes": 68
+   "viajes": 68,
+   "caja": [
+    43.4881,
+    -8.2311,
+    43.6862,
+    -7.8496
+   ]
   },
   {
    "nucleo": "León",
    "archivo": "leon.json",
    "estaciones": 44,
-   "viajes": 109
+   "viajes": 109,
+   "caja": [
+    42.6025,
+    -5.5749,
+    42.865,
+    -4.8451
+   ]
   },
   {
    "nucleo": "Madrid",
    "archivo": "madrid.json",
    "estaciones": 93,
-   "viajes": 2320
+   "viajes": 2320,
+   "caja": [
+    40.035,
+    -4.2691,
+    40.7376,
+    -3.1823
+   ]
   },
   {
    "nucleo": "Málaga",
    "archivo": "malaga.json",
    "estaciones": 23,
-   "viajes": 246
+   "viajes": 246,
+   "caja": [
+    36.5419,
+    -4.7118,
+    36.8199,
+    -4.4265
+   ]
   },
   {
    "nucleo": "Murcia/Alicante",
    "archivo": "murcia-alicante.json",
    "estaciones": 23,
-   "viajes": 204
+   "viajes": 204,
+   "caja": [
+    37.3925,
+    -1.7796,
+    38.3946,
+    -0.4955
+   ]
   },
   {
    "nucleo": "Rodalies de Catalunya",
    "archivo": "rodalies-de-catalunya.json",
    "estaciones": 210,
-   "viajes": 2954
+   "viajes": 2954,
+   "caja": [
+    40.5959,
+    -0.8222,
+    42.459,
+    3.1631
+   ]
   },
   {
    "nucleo": "San Sebastián",
    "archivo": "san-sebastian.json",
    "estaciones": 30,
-   "viajes": 142
+   "viajes": 142,
+   "caja": [
+    43.019,
+    -2.3347,
+    43.3395,
+    -1.8013
+   ]
   },
   {
    "nucleo": "Santander",
    "archivo": "santander.json",
    "estaciones": 77,
-   "viajes": 452
+   "viajes": 452,
+   "caja": [
+    42.9945,
+    -4.5143,
+    43.4584,
+    -3.4209
+   ]
   },
   {
    "nucleo": "Sevilla",
    "archivo": "sevilla.json",
    "estaciones": 33,
-   "viajes": 269
+   "viajes": 269,
+   "caja": [
+    36.9116,
+    -6.2082,
+    37.9329,
+    -5.5296
+   ]
   },
   {
    "nucleo": "Valencia",
    "archivo": "valencia.json",
    "estaciones": 70,
-   "viajes": 766
+   "viajes": 766,
+   "caja": [
+    38.8778,
+    -1.2024,
+    40.4717,
+    0.4557
+   ]
   },
   {
    "nucleo": "Zaragoza",
    "archivo": "zaragoza.json",
    "estaciones": 6,
-   "viajes": 146
+   "viajes": 146,
+   "caja": [
+    41.6334,
+    -1.0202,
+    41.7227,
+    -0.8682
+   ]
   }
  ]
 }

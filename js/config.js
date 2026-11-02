@@ -213,6 +213,12 @@ export const CONFIG = {
    * Horarios completos de Cercanías para la pestaña «Próximo tren»
    * (un archivo por núcleo, generado por scripts/generar_diccionarios.py).
    */
+  /** Estaciones de Cercanías en el mapa: se ven a partir de este zoom y abren su panel */
+  estacionesMapa: {
+    activas: true,
+    zoomMin: 13,
+  },
+
   horariosCercanias: {
     indice: 'data/horarios/cercanias/indice.json',
     carpeta: 'data/horarios/cercanias/',
