@@ -3,7 +3,8 @@
  * ---------------------------------------------------------------
  * Todo lo relacionado con Leaflet: creación del mapa, marcadores
  * coloreados por estado y orientados según el rumbo, popups,
- * animación suave entre posiciones, leyenda y seguimiento de un tren
+ * animación suave entre posiciones (por la vía cuando se conoce su
+ * trazado, en línea recta si no), leyenda y seguimiento de un tren
  * (el mapa lo mantiene centrado mientras se mueve).
  *
  * Depende de la variable global `L` (Leaflet cargado en index.html).
@@ -12,6 +13,7 @@
 import { CONFIG } from '../config.js';
 import { ETIQUETAS_ESTADO, ORDEN_ESTADOS, describirAntiguedad } from './estado.js';
 import { distanciaKm, calcularRumbo, diferenciaAngular, posicionEnTramo } from '../utilidades/geo.js';
+import { proyectarEnTrazado, posicionEnTramoVia } from './trazados.js';
 
 /** Duración del salto en modo de animación 'rapida' (ms) */
 const DURACION_SALTO_RAPIDO_MS = 900;
@@ -25,6 +27,11 @@ const MINUTOS_DATO_ANTIGUO = 10;
 const ZOOM_SEGUIMIENTO = 13;
 /** Desvío (px) del tren respecto al centro a partir del cual se recentra */
 const DESVIO_MAX_PX = 1;
+
+/** Posición de un tramo en el instante t: por la vía si tiene trazado, si no en línea recta */
+function posicionDe(tramo, t) {
+  return tramo.trazado ? posicionEnTramoVia(tramo, t) : posicionEnTramo(tramo, t);
+}
 
 /** Escapa texto antes de meterlo en HTML (los feeds no son de fiar) */
 export function escaparHtml(texto) {
@@ -143,7 +150,10 @@ export class MapaTransporte {
    */
   constructor(idContenedor, { colores }) {
     this.colores = { ...colores, unknown: CONFIG.colorSinDatos };
-    /** id → {marcador, vehiculo, tramo, ultimoCambioMs, rumboPintado, rumboEstimado} */
+    /**
+     * id → {marcador, vehiculo, tramo, ultimoCambioMs, rumboPintado, rumboEstimado, via}
+     * via = {trazado, s}: vía por la que va y distancia recorrida al final del tramo
+     */
     this.marcadores = new Map();
     /** ids de marcadores con un deslizamiento en curso */
     this.enMovimiento = new Set();
@@ -255,9 +265,8 @@ export class MapaTransporte {
   _moverA(registro, lat, lon) {
     const cfg = CONFIG.animacion;
     const ahora = performance.now();
-    const actual = registro.tramo ? posicionEnTramo(registro.tramo, ahora) : registro.marcador.getLatLng();
+    const actual = registro.tramo ? posicionDe(registro.tramo, ahora) : registro.marcador.getLatLng();
     const desde = [actual.lat, actual.lon ?? actual.lng];
-    const salto = distanciaKm(desde[0], desde[1], lat, lon);
 
     // Ritmo real de actualización de este tren (tiempo desde su último movimiento)
     const intervaloMs = registro.ultimoCambioMs ? ahora - registro.ultimoCambioMs : this.duracionInicialSeg * 1000;
@@ -270,6 +279,19 @@ export class MapaTransporte {
     }
     registro.ultimaPosicionReal = [lat, lon];
 
+    const duracionMs =
+      cfg.modo === 'rapida'
+        ? DURACION_SALTO_RAPIDO_MS
+        : Math.min(cfg.duracionMaxSeg * 1000, Math.max(cfg.duracionMinSeg * 1000, intervaloMs));
+
+    // Por la vía, si el tren tiene trazado y la posición está sobre él
+    const destinoVia = this._moverPorVia(registro, lat, lon, desde, ahora, duracionMs);
+    if (destinoVia === true) return;
+    // Si la posición pintada estaba fuera de la vía, se llega en línea
+    // recta al punto de la vía (y desde ahí ya avanza por ella)
+    if (destinoVia) [lat, lon] = destinoVia;
+
+    const salto = distanciaKm(desde[0], desde[1], lat, lon);
     if (salto > cfg.saltoMaximoKm || document.hidden) {
       // Salto inverosímil o pestaña oculta: se coloca directamente
       registro.tramo = null;
@@ -278,13 +300,90 @@ export class MapaTransporte {
       return;
     }
 
-    const duracionMs =
-      cfg.modo === 'rapida'
-        ? DURACION_SALTO_RAPIDO_MS
-        : Math.min(cfg.duracionMaxSeg * 1000, Math.max(cfg.duracionMinSeg * 1000, intervaloMs));
     registro.tramo = { desde, hasta: [lat, lon], inicioMs: ahora, duracionMs };
     this.enMovimiento.add(registro.vehiculo.id);
     this._arrancarBucle();
+  }
+
+  /** Proyección de una posición sobre la vía del tren (o null si no tiene o está lejos) */
+  _proyectar(vehiculo, lat, lon, pistaS = null) {
+    if (!CONFIG.trazados?.activos || !vehiculo.trazado) return null;
+    return proyectarEnTrazado(vehiculo.trazado, lat, lon, { toleranciaM: CONFIG.trazados.toleranciaM, pistaS });
+  }
+
+  /**
+   * Movimiento a lo largo de la vía. Devuelve:
+   *   true            ya se ha resuelto (deslizamiento por la vía, parada o salto)
+   *   [lat, lon]      punto de la vía al que ir en línea recta (venía de fuera)
+   *   null            sin vía: movimiento en línea recta normal
+   */
+  _moverPorVia(registro, lat, lon, desde, ahora, duracionMs) {
+    const v = registro.vehiculo;
+    if (!v.trazado) {
+      registro.via = null;
+      return null;
+    }
+    const pista = registro.via?.trazado === v.trazado ? registro.via.s : null;
+    const destino = this._proyectar(v, lat, lon, pista);
+    if (!destino) {
+      registro.via = null;
+      return null;
+    }
+
+    // Dónde está ahora el tren sobre la vía (puede ir a mitad de un tramo)
+    let sActual = null;
+    if (registro.tramo?.trazado === v.trazado) sActual = posicionEnTramoVia(registro.tramo, ahora).s;
+    else sActual = this._proyectar(v, desde[0], desde[1], pista ?? destino.s)?.s ?? null;
+
+    registro.via = { trazado: v.trazado, s: destino.s };
+    // La vía de cada viaje va en su sentido de marcha: su rumbo es la flecha
+    registro.rumboEstimado = destino.rumbo;
+    if (sActual === null) return [destino.lat, destino.lon];
+
+    const avance = destino.s - sActual;
+    const cfg = CONFIG.animacion;
+    if (avance > cfg.saltoMaximoKm * 1000 || avance < -CONFIG.trazados.retrocesoIgnoradoM || document.hidden) {
+      // Salto inverosímil, tren que vuelve a empezar o pestaña oculta: se coloca
+      this._colocar(registro, destino.lat, destino.lon);
+      return true;
+    }
+    if (avance <= 0) {
+      // Retroceso de unos metros (redondeos del feed): se queda donde está
+      this._colocar(registro, desde[0], desde[1]);
+      registro.via.s = sActual;
+      return true;
+    }
+    registro.tramo = {
+      trazado: v.trazado,
+      sDesde: sActual,
+      sHasta: destino.s,
+      hasta: [destino.lat, destino.lon],
+      inicioMs: ahora,
+      duracionMs,
+    };
+    this.enMovimiento.add(v.id);
+    this._arrancarBucle();
+    return true;
+  }
+
+  /** Coloca un marcador sin animación y cancela su tramo */
+  _colocar(registro, lat, lon) {
+    registro.tramo = null;
+    this.enMovimiento.delete(registro.vehiculo.id);
+    registro.marcador.setLatLng([lat, lon]);
+  }
+
+  /**
+   * Un tren parado cuyo trazado acaba de cargarse: se encaja en la vía y
+   * se orienta su flecha sin esperar a que se mueva.
+   */
+  _engancharVia(registro) {
+    const v = registro.vehiculo;
+    const p = this._proyectar(v, v.lat, v.lon);
+    if (!p) return;
+    registro.via = { trazado: v.trazado, s: p.s };
+    registro.rumboEstimado = p.rumbo;
+    if (!registro.tramo) registro.marcador.setLatLng([p.lat, p.lon]);
   }
 
   /** Un único bucle para todos los marcadores, limitado a CONFIG.animacion.fps */
@@ -319,9 +418,14 @@ export class MapaTransporte {
         this.enMovimiento.delete(id);
         continue;
       }
-      const p = posicionEnTramo(registro.tramo, t);
+      const p = posicionDe(registro.tramo, t);
       if (todos || p.terminado || visibles.contains([p.lat, p.lon])) {
         registro.marcador.setLatLng([p.lat, p.lon]);
+        // Por la vía, la flecha gira con las curvas (solo se redibuja si gira bastante)
+        if (p.rumbo !== undefined) {
+          registro.rumboEstimado = p.rumbo;
+          this._actualizarIcono(registro);
+        }
       }
       if (p.terminado) {
         registro.tramo = null;
@@ -375,7 +479,7 @@ export class MapaTransporte {
     if (!registro) return;
     registro.marcador.closePopup();
     this.centrarSeguido = true;
-    const destino = registro.tramo ? posicionEnTramo(registro.tramo, performance.now()) : registro.marcador.getLatLng();
+    const destino = registro.tramo ? posicionDe(registro.tramo, performance.now()) : registro.marcador.getLatLng();
     const zoom = Math.max(this.mapa.getZoom(), ZOOM_SEGUIMIENTO);
     if (!volar) {
       this.mapa.setView([destino.lat, destino.lon ?? destino.lng], zoom, { animate: false });
@@ -402,18 +506,24 @@ export class MapaTransporte {
       const registro = this.marcadores.get(v.id);
 
       if (!registro) {
-        const marcador = L.marker([v.lat, v.lon], {
-          icon: this._icono(v),
+        // Si tiene trazado, aparece ya sobre la vía y con la flecha en su sentido de marcha
+        const enVia = this._proyectar(v, v.lat, v.lon);
+        const nuevo = {
+          vehiculo: v, tramo: null, ultimoCambioMs: null,
+          ultimaPosicionReal: [v.lat, v.lon],
+          rumboEstimado: enVia?.rumbo ?? null,
+          via: enVia ? { trazado: v.trazado, s: enVia.s } : null,
+        };
+        const rumboInicial = this._rumboVisible(nuevo);
+        const marcador = L.marker(enVia ? [enVia.lat, enVia.lon] : [v.lat, v.lon], {
+          icon: this._icono(v, rumboInicial),
           title: v.titulo || v.etiqueta,
           keyboard: true,
           riseOnHover: true,
           zIndexOffset: v.id === this.idSeguido ? 1000 : 0,
         }).bindPopup(htmlPopup(v, color), { maxWidth: 300, minWidth: 240 });
         marcador.addTo(this.mapa);
-        this.marcadores.set(v.id, {
-          marcador, vehiculo: v, tramo: null, ultimoCambioMs: null,
-          ultimaPosicionReal: [v.lat, v.lon], rumboEstimado: null, rumboPintado: v.rumbo ?? null,
-        });
+        this.marcadores.set(v.id, { ...nuevo, marcador, rumboPintado: rumboInicial });
         continue;
       }
 
@@ -422,6 +532,7 @@ export class MapaTransporte {
       registro.marcador.setPopupContent(htmlPopup(v, color));
       // La posición solo cambia cuando el feed trae un dato nuevo para ese tren
       if (anterior.lat !== v.lat || anterior.lon !== v.lon) this._moverA(registro, v.lat, v.lon);
+      else if (v.trazado && registro.via?.trazado !== v.trazado) this._engancharVia(registro);
       this._actualizarIcono(registro, anterior.estado !== v.estado);
     }
 

@@ -1,95 +1,95 @@
 {
- "generado": "2026-11-01T21:17:04+01:00",
+ "generado": "2026-11-02T11:18:25+01:00",
  "nucleos": [
   {
    "nucleo": "Asturias",
    "archivo": "asturias.json",
    "estaciones": 148,
-   "viajes": 613
+   "viajes": 779
   },
   {
    "nucleo": "Bilbao",
    "archivo": "bilbao.json",
    "estaciones": 112,
-   "viajes": 619
+   "viajes": 720
   },
   {
    "nucleo": "Cádiz",
    "archivo": "cadiz.json",
-   "estaciones": 29,
-   "viajes": 140
+   "estaciones": 30,
+   "viajes": 216
   },
   {
    "nucleo": "Cartagena",
    "archivo": "cartagena.json",
    "estaciones": 15,
-   "viajes": 70
+   "viajes": 88
   },
   {
    "nucleo": "Ferrol",
    "archivo": "ferrol.json",
    "estaciones": 24,
-   "viajes": 49
+   "viajes": 68
   },
   {
    "nucleo": "León",
    "archivo": "leon.json",
    "estaciones": 44,
-   "viajes": 84
+   "viajes": 109
   },
   {
    "nucleo": "Madrid",
    "archivo": "madrid.json",
    "estaciones": 93,
-   "viajes": 2073
+   "viajes": 2320
   },
   {
    "nucleo": "Málaga",
    "archivo": "malaga.json",
    "estaciones": 23,
-   "viajes": 228
+   "viajes": 246
   },
   {
    "nucleo": "Murcia/Alicante",
    "archivo": "murcia-alicante.json",
    "estaciones": 23,
-   "viajes": 168
+   "viajes": 204
   },
   {
    "nucleo": "Rodalies de Catalunya",
    "archivo": "rodalies-de-catalunya.json",
    "estaciones": 210,
-   "viajes": 2721
+   "viajes": 2954
   },
   {
    "nucleo": "San Sebastián",
    "archivo": "san-sebastian.json",
    "estaciones": 30,
-   "viajes": 118
+   "viajes": 142
   },
   {
    "nucleo": "Santander",
    "archivo": "santander.json",
    "estaciones": 77,
-   "viajes": 324
+   "viajes": 452
   },
   {
    "nucleo": "Sevilla",
    "archivo": "sevilla.json",
-   "estaciones": 31,
-   "viajes": 216
+   "estaciones": 33,
+   "viajes": 269
   },
   {
    "nucleo": "Valencia",
    "archivo": "valencia.json",
-   "estaciones": 71,
-   "viajes": 626
+   "estaciones": 70,
+   "viajes": 766
   },
   {
    "nucleo": "Zaragoza",
    "archivo": "zaragoza.json",
    "estaciones": 6,
-   "viajes": 124
+   "viajes": 146
   }
  ]
 }

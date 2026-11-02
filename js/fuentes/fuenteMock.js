@@ -9,6 +9,10 @@
  * Opcionalmente añade trenes ficticios (marcados como sintéticos)
  * para que aparezcan los cuatro estados: puntual, leve, grave y
  * cancelado.
+ *
+ * Los trenes cuyo viaje tiene trazado en el diccionario simulado (C4 y
+ * R1, con el trazado real de Renfe) no van por rumbo y velocidad sino
+ * avanzando POR la vía, para validar la animación a lo largo de ella.
  */
 
 import { CONFIG } from '../config.js';
@@ -16,6 +20,8 @@ import { pedirJson } from '../utilidades/red.js';
 import { normalizarFeed } from '../modulos/normalizador.js';
 import { Diccionario, enriquecerVehiculo } from '../modulos/diccionario.js';
 import { FuenteHorario } from './fuenteHorario.js';
+import { AlmacenTrazados } from './almacenTrazados.js';
+import { proyectarEnTrazado, puntoEnDistancia } from '../modulos/trazados.js';
 
 const RADIO_TIERRA_M = 6371000;
 /** Caja aproximada de la España peninsular; si un tren sale, da la vuelta */
@@ -82,6 +88,36 @@ export class FuenteMock {
     this.umbrales = umbrales;
     this.feed = null;
     this.ultimaLectura = null;
+    this.trazados = new AlmacenTrazados();
+  }
+
+  /**
+   * Coloca sobre su vía los trenes cuyo viaje tiene trazado y guarda la
+   * distancia recorrida (entidad._via) para hacerlos avanzar por ella.
+   */
+  async _ponerEnVia() {
+    for (const entidad of this.feed.entity) {
+      const vp = entidad.vehicle;
+      const ref = this.diccionario.viaje(vp.trip?.trip_id)?.trazado;
+      if (!ref) continue;
+      await this.trazados.cargar(ref.archivo);
+      const trazado = this.trazados.obtener(ref);
+      if (!trazado) continue;
+      // Sin tolerancia: el punto de partida del JSON solo es orientativo
+      const p = proyectarEnTrazado(trazado, vp.position.latitude, vp.position.longitude, { toleranciaM: Infinity });
+      entidad._via = { trazado, s: p.s };
+      this._colocarEnVia(entidad);
+    }
+  }
+
+  /** Copia en la posición de la entidad el punto de la vía donde va */
+  _colocarEnVia(entidad) {
+    const { trazado, s } = entidad._via;
+    const p = puntoEnDistancia(trazado, s);
+    const pos = entidad.vehicle.position;
+    pos.latitude = Number(p.lat.toFixed(6));
+    pos.longitude = Number(p.lon.toFixed(6));
+    pos.bearing = Math.round(p.rumbo);
   }
 
   /** Carga el JSON base (solo la primera vez) */
@@ -99,6 +135,7 @@ export class FuenteMock {
     if (CONFIG.mock.generarSinteticos) {
       this.feed.entity.push(...structuredClone(SINTETICOS));
     }
+    if (CONFIG.mock.animar) await this._ponerEnVia();
     this.ultimaLectura = Date.now();
     // Los trenes según horario (OUIGO) no dependen de ninguna API: se
     // muestran también aquí para validar su aspecto
@@ -122,7 +159,13 @@ export class FuenteMock {
       const cancelado = vp.trip?.schedule_relationship === 'CANCELED';
       if (cancelado) continue;
 
-      if (CONFIG.mock.animar && dtSeg > 0) {
+      if (CONFIG.mock.animar && dtSeg > 0 && entidad._via) {
+        // Avanza por la vía; al llegar al final vuelve a salir de cabecera
+        const ms = CONFIG.mock.unidadVelocidad === 'km/h' ? vp.position.speed / 3.6 : vp.position.speed;
+        entidad._via.s += ms * dtSeg;
+        if (entidad._via.s >= entidad._via.trazado.longitud) entidad._via.s = 0;
+        this._colocarEnVia(entidad);
+      } else if (CONFIG.mock.animar && dtSeg > 0) {
         const pos = vp.position;
         const ms = CONFIG.mock.unidadVelocidad === 'km/h' ? pos.speed / 3.6 : pos.speed;
         // Pequeña deriva del rumbo para que el movimiento no sea una recta perfecta
@@ -158,6 +201,7 @@ export class FuenteMock {
       umbrales: this.umbrales,
       fuente: this.nombre,
     }).map((v) => enriquecerVehiculo(v, this.diccionario));
+    this.trazados.asignar(vehiculos);
     if (this.horario) vehiculos.push(...this.horario.leer());
     return vehiculos;
   }

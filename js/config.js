@@ -44,6 +44,23 @@ export const CONFIG = {
     rumboEstimado: true,
   },
 
+  /**
+   * Trenes por la vía. Con el trazado de la línea (shapes.txt de Renfe,
+   * de momento solo Cercanías) cada posición se proyecta sobre la vía y
+   * el tren se desliza A LO LARGO de ella en vez de en línea recta.
+   * Sin trazado, o si la posición queda lejos de la vía (desvíos, datos
+   * erróneos), se mantiene el movimiento en línea recta.
+   */
+  trazados: {
+    activos: true,
+    /** Un archivo por núcleo (scripts/generar_diccionarios.py) */
+    carpeta: 'data/trazados/cercanias/',
+    /** Distancia máxima (m) a la vía para considerar que el tren va por ella */
+    toleranciaM: 300,
+    /** Retrocesos menores que esto (m) se ignoran: un tren no va marcha atrás */
+    retrocesoIgnoradoM: 60,
+  },
+
   /** Tiempo máximo de espera de cada petición HTTP (ms) */
   timeoutPeticionMs: 15000,
 

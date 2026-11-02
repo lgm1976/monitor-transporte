@@ -14,7 +14,9 @@ Cada archivo contiene:
               (grupo = núcleo en Cercanías, tipo de tren en AV/LD/MD)
   estaciones  {stop_id: nombre}
   viajes      {trip_id: [índice de línea, origen, destino,
-                         hora salida, hora llegada]}
+                         hora salida, hora llegada(, índice de trazado)]}
+  trazados    (solo Cercanías) [[archivo, shape_id], ...]: dónde está el
+              trazado de la vía de cada viaje (ver más abajo)
 
 Solo se incluyen los viajes que circulan en una ventana corta de días
 (ayer, hoy y mañana por defecto) para que los archivos sean ligeros.
@@ -25,7 +27,17 @@ de cada tren), un archivo por núcleo, para la pestaña «Próximo tren»:
   data/horarios/cercanias/indice.json      núcleos disponibles
   data/horarios/cercanias/<núcleo>.json    p. ej. madrid.json
 
-Cada archivo de núcleo contiene:
+Y los TRAZADOS de las líneas de Cercanías (shapes.txt), simplificados,
+para que la web mueva los trenes a lo largo de la vía:
+
+  data/trazados/cercanias/<núcleo>.json    {shape_id: polilínea codificada}
+
+La polilínea usa la codificación de Google (precisión 1e-5, ~1 m). Los
+trazados «_INV» son el mismo en sentido contrario: solo se guardan si
+falta el directo (la web los invierte). No llevan fecha de generación
+para que el archivo solo cambie cuando Renfe cambie el trazado.
+
+Cada archivo de núcleo de horarios contiene:
   fechas      ["AAAA-MM-DD", ...]  (ayer, hoy, mañana)
   lineas      [[nombre, color, color de texto], ...]
   estaciones  [[stop_id, nombre], ...]
@@ -60,6 +72,10 @@ ZONA = ZoneInfo("Europe/Madrid")
 RAIZ = Path(__file__).resolve().parent.parent
 SALIDA = RAIZ / "data" / "diccionarios"
 SALIDA_HORARIOS = RAIZ / "data" / "horarios" / "cercanias"
+SALIDA_TRAZADOS = RAIZ / "data" / "trazados" / "cercanias"
+# Tolerancia de simplificación de los trazados (m). Con 5 m toda España
+# ocupa unos 70 KB (40 KB comprimidos) y el tren no se aparta de la vía.
+TOLERANCIA_TRAZADO_M = 5
 
 FEEDS = {
     "cercanias": {
@@ -160,11 +176,14 @@ def generar(clave: str, zf: zipfile.ZipFile, dias: list[date]) -> dict:
             lineas.append(list(tupla))
         indice_ruta[r["route_id"]] = vistas[tupla]
 
-    # Viajes de la ventana
+    # Viajes de la ventana (y, en Cercanías, el trazado de cada uno)
     viajes: dict[str, list] = {}
+    forma_viaje: dict[str, str] = {}
     for t in leer_csv(zf, "trips.txt"):
         if t["service_id"] in activos and t["route_id"] in indice_ruta:
             viajes[t["trip_id"]] = [indice_ruta[t["route_id"]], None, None, "", "", 10**9, -1]
+            if es_cercanias and t.get("shape_id"):
+                forma_viaje[t["trip_id"]] = t["shape_id"]
 
     # Primera y última parada de cada viaje (lectura en streaming: el
     # stop_times de Cercanías pesa cerca de 300 MB)
@@ -179,6 +198,19 @@ def generar(clave: str, zf: zipfile.ZipFile, dias: list[date]) -> dict:
             v[6], v[2], v[4] = seq, st["stop_id"], hora_corta(st["arrival_time"] or st["departure_time"])
 
     viajes_limpios = {tid: v[:5] for tid, v in viajes.items() if v[1] is not None}
+
+    # Trazado de cada viaje: índice en la lista [[archivo, shape_id], ...]
+    trazados: list[list[str]] = []
+    indice_trazado: dict[str, int] = {}
+    for tid, v in viajes_limpios.items():
+        forma = forma_viaje.get(tid)
+        nucleo = NUCLEOS.get(forma.split("_")[0], "") if forma else ""
+        if not nucleo:
+            continue
+        if forma not in indice_trazado:
+            indice_trazado[forma] = len(trazados)
+            trazados.append([slug(nucleo), forma])
+        v.append(indice_trazado[forma])
     usadas = {v[1] for v in viajes_limpios.values()} | {v[2] for v in viajes_limpios.values()}
 
     # Todas las estaciones (pocas): el feed en vivo puede citar paradas intermedias
@@ -193,11 +225,13 @@ def generar(clave: str, zf: zipfile.ZipFile, dias: list[date]) -> dict:
         "ventana": [dias[0].isoformat(), dias[-1].isoformat()],
         "formato": {
             "lineas": ["nombre", "color", "colorTexto", "grupo"],
-            "viajes": ["linea", "origen", "destino", "salida", "llegada"],
+            "viajes": ["linea", "origen", "destino", "salida", "llegada", "trazado"],
+            "trazados": ["archivo", "shape_id"],
         },
         "lineas": lineas,
         "estaciones": estaciones,
         "viajes": viajes_limpios,
+        **({"trazados": trazados} if trazados else {}),
     }
 
 
@@ -309,6 +343,89 @@ def guardar_horarios_cercanias(horarios: dict[str, dict]) -> None:
     print(f"  horarios de Cercanías: {len(indice)} núcleos → {SALIDA_HORARIOS.relative_to(RAIZ)} ({total / 1024:.0f} KB)", file=sys.stderr)
 
 
+def simplificar(puntos: list[tuple[float, float]], tolerancia_m: float) -> list[tuple[float, float]]:
+    """Douglas-Peucker en metros (proyección local), sin recursión."""
+    if len(puntos) < 3:
+        return puntos
+    import math
+    lat0 = math.radians(sum(p[0] for p in puntos) / len(puntos))
+    kx, ky = 111320 * math.cos(lat0), 110540
+    xy = [(lon * kx, lat * ky) for lat, lon in puntos]
+    conservar = [False] * len(puntos)
+    conservar[0] = conservar[-1] = True
+    pila = [(0, len(puntos) - 1)]
+    while pila:
+        a, b = pila.pop()
+        ax, ay = xy[a]
+        dx, dy = xy[b][0] - ax, xy[b][1] - ay
+        largo2 = dx * dx + dy * dy
+        peor, i_peor = -1.0, -1
+        for i in range(a + 1, b):
+            px, py = xy[i][0] - ax, xy[i][1] - ay
+            k = 0.0 if largo2 == 0 else max(0.0, min(1.0, (px * dx + py * dy) / largo2))
+            d = math.hypot(px - k * dx, py - k * dy)
+            if d > peor:
+                peor, i_peor = d, i
+        if peor > tolerancia_m:
+            conservar[i_peor] = True
+            pila += [(a, i_peor), (i_peor, b)]
+    return [p for p, c in zip(puntos, conservar) if c]
+
+
+def codificar_polilinea(puntos: list[tuple[float, float]]) -> str:
+    """Codificación de polilíneas de Google (precisión 5): muy compacta en JSON."""
+    salida, lat_prev, lon_prev = [], 0, 0
+    for lat, lon in puntos:
+        ilat, ilon = round(lat * 1e5), round(lon * 1e5)
+        for v in (ilat - lat_prev, ilon - lon_prev):
+            v = ~(v << 1) if v < 0 else v << 1
+            while v >= 0x20:
+                salida.append(chr((0x20 | (v & 0x1F)) + 63))
+                v >>= 5
+            salida.append(chr(v + 63))
+        lat_prev, lon_prev = ilat, ilon
+    return "".join(salida)
+
+
+def generar_trazados_cercanias(zf: zipfile.ZipFile) -> dict[str, dict[str, str]]:
+    """{núcleo: {shape_id: polilínea}} a partir de shapes.txt (unos 4 MB)."""
+    if "shapes.txt" not in zf.namelist():
+        print("  aviso: el GTFS de Cercanías no trae shapes.txt", file=sys.stderr)
+        return {}
+    formas: dict[str, list] = {}
+    for f in leer_csv(zf, "shapes.txt"):
+        formas.setdefault(f["shape_id"], []).append(
+            (int(f["shape_pt_sequence"] or 0), float(f["shape_pt_lat"]), float(f["shape_pt_lon"]))
+        )
+    por_nucleo: dict[str, dict[str, str]] = {}
+    for forma in sorted(formas):
+        # El «_INV» es el mismo trazado al revés: la web lo invierte
+        if forma.endswith("_INV") and forma[:-4] in formas:
+            continue
+        nucleo = NUCLEOS.get(forma.split("_")[0], "")
+        puntos = [(lat, lon) for _, lat, lon in sorted(formas[forma])]
+        if not nucleo or len(puntos) < 2:
+            continue
+        por_nucleo.setdefault(nucleo, {})[forma] = codificar_polilinea(simplificar(puntos, TOLERANCIA_TRAZADO_M))
+    return por_nucleo
+
+
+def guardar_trazados_cercanias(trazados: dict[str, dict[str, str]]) -> None:
+    if not trazados:
+        return
+    SALIDA_TRAZADOS.mkdir(parents=True, exist_ok=True)
+    total = 0
+    for nucleo, formas in trazados.items():
+        destino = SALIDA_TRAZADOS / f"{slug(nucleo)}.json"
+        destino.write_text(
+            json.dumps({"nucleo": nucleo, "precision": 5, "trazados": formas}, ensure_ascii=False, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        total += destino.stat().st_size
+    n = sum(len(f) for f in trazados.values())
+    print(f"  trazados de Cercanías: {n} en {len(trazados)} núcleos → {SALIDA_TRAZADOS.relative_to(RAIZ)} ({total / 1024:.0f} KB)", file=sys.stderr)
+
+
 def abrir_zip(clave: str, carpeta_zips: Path | None) -> zipfile.ZipFile:
     if carpeta_zips:
         return zipfile.ZipFile(carpeta_zips / FEEDS[clave]["zip_local"])
@@ -336,6 +453,7 @@ def main() -> int:
             datos = generar(clave, zf, dias)
             if clave == "cercanias":
                 guardar_horarios_cercanias(generar_horarios_cercanias(zf, hoy))
+                guardar_trazados_cercanias(generar_trazados_cercanias(zf))
         destino = SALIDA / f"{clave}.json"
         destino.write_text(json.dumps(datos, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         print(

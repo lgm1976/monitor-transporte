@@ -12,7 +12,7 @@
 import { describirRetraso } from './estado.js';
 
 /** Diccionario vacío: la app sigue funcionando, solo que con códigos */
-const VACIO = { lineas: [], estaciones: {}, viajes: {} };
+const VACIO = { lineas: [], estaciones: {}, viajes: {}, trazados: [] };
 
 export class Diccionario {
   /** @param {object} datos contenido de un JSON de data/diccionarios */
@@ -20,6 +20,8 @@ export class Diccionario {
     this.lineas = datos.lineas || [];
     this.estaciones = datos.estaciones || {};
     this.viajes = datos.viajes || {};
+    /** [[archivo, shape_id], ...]: trazado de la vía de cada viaje (Cercanías) */
+    this.trazados = datos.trazados || [];
     this.generado = datos.generado || null;
     this.servicioPorDefecto = servicioPorDefecto;
   }
@@ -34,8 +36,9 @@ export class Diccionario {
   viaje(tripId) {
     const v = tripId ? this.viajes[tripId] : null;
     if (!v) return null;
-    const [indiceLinea, origen, destino, salida, llegada] = v;
+    const [indiceLinea, origen, destino, salida, llegada, indiceTrazado] = v;
     const [nombre, color, colorTexto, grupo] = this.lineas[indiceLinea] || [];
+    const [archivo, idTrazado] = this.trazados[indiceTrazado] || [];
     return {
       linea: nombre ? { nombre, color: color ? `#${color}` : null, colorTexto: colorTexto ? `#${colorTexto}` : null } : null,
       grupo: grupo || null,
@@ -43,6 +46,7 @@ export class Diccionario {
       destino: this.estacion(destino),
       salida: salida || null,
       llegada: llegada || null,
+      trazado: archivo && idTrazado ? { archivo, id: idTrazado } : null,
     };
   }
 }
@@ -143,5 +147,7 @@ export function enriquecerVehiculo(v, dicc) {
     situacion: describirSituacion(v.estadoParada, paradaNombre),
     textoRetraso: v.cancelado ? 'Cancelado' : describirRetraso(v.retrasoSeg),
     conHorario: Boolean(viaje),
+    /** Dónde está el trazado de su vía ({archivo, id}); lo resuelve AlmacenTrazados */
+    trazadoRef: viaje?.trazado ?? null,
   };
 }

@@ -1,5 +1,6 @@
 # Regenera cada noche los diccionarios de estaciones, líneas y viajes
-# a partir del GTFS estático de Renfe, y los horarios de OUIGO (trenes
+# a partir del GTFS estático de Renfe (con los trazados de las vías de
+# Cercanías), y los horarios de OUIGO (trenes
 # según horario), y los sube al repositorio.
 # GitHub Pages vuelve a publicar la web automáticamente tras el commit.
 name: Actualizar diccionarios GTFS
@@ -40,7 +41,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/diccionarios data/horarios
+          git add data/diccionarios data/horarios data/trazados
           if git diff --cached --quiet; then
             echo "Sin cambios en los diccionarios."
           else

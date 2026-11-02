@@ -5,6 +5,7 @@ Aplicación web estática que muestra en un mapa interactivo la posición y la p
 - HTML + JavaScript vanilla (módulos ES), **Tailwind CSS** y **Leaflet**
 - **Modo simulado** con trenes que se mueven, para validar la interfaz sin depender de ninguna API
 - **Modo real** con varias fuentes en paralelo, retrasos cruzados desde TripUpdates y soporte protobuf bajo demanda
+- **Trenes de Cercanías por la vía**: se deslizan siguiendo el trazado de la línea, con la flecha en su sentido de marcha
 - **Filtros por servicio y núcleo**, **seguir un tren** y **enlace para compartirlo**
 - **Trenes OUIGO según horario** (OUIGO no publica datos en tiempo real)
 - **Próximo tren** entre dos estaciones de Cercanías, con cuenta atrás y retraso en vivo
@@ -24,6 +25,7 @@ js/
     filtros.js             Servicio/núcleo, clave del tren, URL y resumen (puro, testeable)
     horario.js             Posición estimada según horario (puro, testeable)
     trayectos.js           Próximos trenes de una estación a otra (puro, testeable)
+    trazados.js            Trazados de vía: proyección y avance por la vía (puro, testeable)
     panelTrayecto.js       Pestaña «Próximo tren» del panel
     normalizador.js        GTFS-RT → modelo interno (puro, testeable)
     mapa.js                Leaflet: marcadores, movimiento continuo, fichas, leyenda
@@ -32,6 +34,7 @@ js/
     fuenteMock.js          Datos simulados con movimiento
     fuenteGtfsRt.js        Feeds reales (varias fuentes en paralelo)
     fuenteHorario.js       Trenes según horario (OUIGO), en los dos modos
+    almacenTrazados.js     Carga bajo demanda los trazados de cada núcleo
   utilidades/
     red.js                 fetch con timeout, proxy CORS y protobuf
     geo.js                 Distancia, rumbo e interpolación (puro, testeable)
@@ -45,9 +48,10 @@ data/
     ouigo.json             OUIGO, para pintarlo según horario
     cercanias/             Todas las paradas de cada tren, un archivo por núcleo
       indice.json, madrid.json, rodalies-de-catalunya.json…
+  trazados/cercanias/      Trazado de las vías de cada línea, un archivo por núcleo
 scripts/
-  generar_diccionarios.py  Descarga el GTFS estático de Renfe y crea los diccionarios
-                           y los horarios completos de Cercanías por núcleo
+  generar_diccionarios.py  Descarga el GTFS estático de Renfe y crea los diccionarios,
+                           los horarios completos y los trazados de Cercanías por núcleo
   generar_horarios.py      Descarga el horario de OUIGO y crea data/horarios/ouigo.json
 .github/workflows/
   diccionarios.yml         Ejecuta los dos scripts cada noche y sube los cambios
@@ -135,6 +139,22 @@ Leer los feeds más a menudo no hace el mapa más fluido: Renfe renueva las posi
 - Un único bucle a 30 fotogramas por segundo mueve solo los trenes visibles; con ~470 trenes consume en torno a un 4 % de CPU. Se detiene durante el zoom y con la pestaña oculta.
 
 Se ajusta en `CONFIG.animacion` (`modo: 'rapida'` vuelve al salto corto de antes).
+
+### Por la vía (Cercanías)
+
+En Cercanías el tren no va en línea recta entre dos posiciones, sino **siguiendo el trazado de su línea**, así que en las curvas no se sale de la vía:
+
+- Cada posición del feed se proyecta sobre el trazado del viaje (si está a menos de 300 m) y el tren se desliza **por distancia recorrida** a lo largo de la vía. La flecha gira con las curvas.
+- El trazado de cada viaje va en su sentido de marcha, así que la flecha sale orientada **desde el primer momento**, también con el tren parado (antes solo aparecía cuando se movía).
+- Si la nueva posición queda unos metros por detrás (redondeos del feed), el tren se queda donde está: no va marcha atrás. Un retroceso grande o un salto de más de 25 km se pintan directamente.
+- Sin trazado (larga distancia, OUIGO, un viaje fuera del diccionario) o con la posición lejos de la vía, se mantiene el movimiento en línea recta.
+- Comprobado el 02/11/2026 con datos reales de Madrid: Renfe calcula las posiciones sobre su propio trazado (0 m de diferencia en los 310 trenes medidos), así que el problema era solo la animación. En 40 s de seguimiento, la separación máxima a la vía bajó de 46 m a 3 m (la tolerancia de la simplificación).
+
+Los trazados salen del `shapes.txt` del GTFS de Cercanías: 72 trazados (los `_INV` son el mismo al revés y la web los invierte), simplificados a 5 m y guardados como polilínea codificada, un archivo por núcleo en `data/trazados/cercanias/` (69 KB en total; Madrid 11 KB). Los genera la Action nocturna junto con los diccionarios; no llevan fecha, así que solo cambian si Renfe cambia un trazado. La web descarga cada núcleo la primera vez que aparece uno de sus trenes; mientras llega, ese tren se mueve en línea recta. El diccionario de Cercanías dice qué trazado lleva cada viaje (`trazados` y sexto campo de `viajes`).
+
+En el modo simulado, los trenes C4 y R1 avanzan por el trazado real de la C4a y la R1 a su velocidad, para validar la animación sin datos en vivo.
+
+Se ajusta en `CONFIG.trazados` (`activos: false` vuelve a la línea recta en todos los trenes).
 
 ## De códigos a información legible
 
@@ -264,13 +284,36 @@ con `css/tailwind-entrada.css` conteniendo las tres directivas `@tailwind base; 
 
 Usa las teselas estándar de OpenStreetMap, que no piden clave pero están pensadas para tráfico ligero (consulta su política de uso). Si el proyecto gana visitas, cambia `CONFIG.mapa.teselas` por un proveedor con clave gratuita (MapTiler, Stadia Maps, Thunderforest). Los estilos de CARTO ahora exigen clave y muestran una marca de agua sin ella.
 
+## Plan: que los trenes vayan siempre por las vías (fase 1 hecha)
+
+Diagnóstico del 01/11/2026. Los trenes se salen de la vía por tres motivos:
+
+1. **Animación en línea recta** entre dos posiciones del feed (15-20 s, unos 500 m): en las curvas recorta por fuera. **Resuelto en Cercanías.**
+2. **OUIGO según horario**: va en línea recta entre estaciones que están a cientos de kilómetros (Madrid → Zaragoza), así que puede ir muy lejos de la vía.
+3. **Posiciones GPS de Renfe**: se temía que trajeran error propio, pero en Cercanías no: caen exactamente sobre el trazado de Renfe (comprobado el 02/11/2026).
+
+Datos disponibles:
+
+- **Cercanías**: el GTFS de Renfe trae `shapes.txt` con el trazado de cada línea y `shape_id` en cada viaje. Ya en uso.
+- **AV/LD/MD y OUIGO**: sus GTFS **no traen trazados**. Habría que sacarlos de OpenStreetMap (vías `railway=rail` vía Overpass, licencia ODbL, atribución «© OpenStreetMap»): construir el grafo de vías y precalcular el camino entre cada par de estaciones consecutivas de los viajes, simplificado. Se haría en un script aparte, ejecutado de vez en cuando (las vías no cambian a diario).
+
+Plan por fases:
+
+1. **Cercanías. Hecha el 02/11/2026** (ver «Por la vía (Cercanías)»). El trazado de cada viaje se añadió solo al diccionario, que es lo que usa el mapa; los horarios de «Próximo tren» comparten `trip_id` con él, así que no hizo falta duplicarlo.
+2. **Larga distancia y OUIGO (siguiente).** Script `generar_trazados_osm.py` con Overpass → caminos estación a estación. Los OUIGO según horario avanzarían por la vía con velocidad constante en cada tramo.
+3. Opcional: dibujar el trazado de la línea del tren seguido.
+
+Si un tren no tiene trazado, o su posición está lejos de la vía (desvíos, datos erróneos), se mantiene el movimiento en línea recta.
+
+Para la fase 2 ya está la base: `js/modulos/trazados.js` (proyección, punto a una distancia, tramos por la vía) y `AlmacenTrazados` sirven para cualquier trazado con el mismo formato de archivo. Bastaría con generar `data/trazados/ld/…` con los caminos estación a estación, añadir su referencia en `ld.json` y `ouigo.json`, y en `horario.js` avanzar por distancia dentro de cada tramo en vez de en línea recta.
+
 ## Próximos pasos sugeridos
 
 - Agrupar marcadores (Leaflet.markercluster) al ver toda España con los dos feeds de Renfe.
 - Arrancar centrado en la zona del usuario (con permiso de ubicación).
 - Panel de estación con próximas llegadas y favoritos («mi C-4 de cada mañana»).
 - Ofrecer el transbordo también cuando llega antes que el directo; dos transbordos; Media Distancia.
-- Trazado de las líneas (shapes.txt de Cercanías).
+- Dibujar el trazado de la línea del tren seguido (los datos ya están en `data/trazados`).
 - Capa de avisos de servicio (`Alert` de GTFS-RT).
 - Filtro por operador cuando haya fuentes de otros operadores.
 - Ficha deslizable desde abajo en el móvil también para el listado.
