@@ -5,7 +5,9 @@
  * coloreados por estado y orientados según el rumbo, popups,
  * animación suave entre posiciones (por la vía cuando se conoce su
  * trazado, en línea recta si no), leyenda y seguimiento de un tren
- * (el mapa lo mantiene centrado mientras se mueve).
+ * (el mapa lo mantiene centrado mientras se mueve) con su recorrido
+ * completo: lo ya hecho en gris, lo pendiente en el color de su línea y
+ * un punto en cada parada.
  *
  * Depende de la variable global `L` (Leaflet cargado en index.html).
  */
@@ -14,6 +16,8 @@ import { CONFIG } from '../config.js';
 import { ETIQUETAS_ESTADO, ORDEN_ESTADOS, describirAntiguedad } from './estado.js';
 import { distanciaKm, calcularRumbo, diferenciaAngular, posicionEnTramo } from '../utilidades/geo.js';
 import { proyectarEnTrazado, posicionEnTramoVia } from './trazados.js';
+import { minutosAHora } from './horario.js';
+import { partirRecorrido, paradaPasada, distanciaEnRecorrido } from './recorrido.js';
 
 /** Duración del salto en modo de animación 'rapida' (ms) */
 const DURACION_SALTO_RAPIDO_MS = 900;
@@ -27,6 +31,14 @@ const MINUTOS_DATO_ANTIGUO = 10;
 const ZOOM_SEGUIMIENTO = 13;
 /** Desvío (px) del tren respecto al centro a partir del cual se recentra */
 const DESVIO_MAX_PX = 1;
+/** Cada cuánto (ms) se recalcula el corte hecho/pendiente del recorrido */
+const INTERVALO_RECORRIDO_MS = 400;
+/** Avance mínimo (m) para volver a partir el recorrido */
+const AVANCE_MIN_RECORRIDO_M = 10;
+/** Color de lo ya recorrido */
+const COLOR_HECHO = '#94a3b8';
+/** Retraso mínimo (s) para dar la hora prevista en las paradas pendientes */
+const RETRASO_MIN_PARADAS_S = 60;
 
 /** Posición de un tramo en el instante t: por la vía si tiene trazado, si no en línea recta */
 function posicionDe(tramo, t) {
@@ -143,6 +155,26 @@ function htmlPopup(v, color) {
     </div>`;
 }
 
+/** Todos los puntos del recorrido, para el borde blanco */
+function tramoCompleto(datos) {
+  const t = datos.trazado;
+  return Array.from(t.lat, (lat, i) => [lat, t.lon[i]]);
+}
+
+/**
+ * Texto de una parada del recorrido: «Getafe Centro · 10:15». Con retraso,
+ * en las que faltan se da también la hora prevista.
+ */
+export function textoParada(p, { pasada = false, retraso = 0, segunHorario = false } = {}) {
+  const nombre = `<strong>${escaparHtml(p.nombre)}</strong>`;
+  if (!Number.isFinite(p.minutos)) return nombre;
+  const hora = minutosAHora(p.minutos);
+  if (retraso && !pasada) {
+    return `${nombre} · <s>${hora}</s> ${minutosAHora(p.minutos + retraso / 60)}`;
+  }
+  return `${nombre} · ${hora}${segunHorario ? ' (horario)' : ''}`;
+}
+
 export class MapaTransporte {
   /**
    * @param {string} idContenedor id del div del mapa
@@ -169,6 +201,11 @@ export class MapaTransporte {
     this.volando = false;
     /** Aviso a app.js cuando el usuario arrastra el mapa y deja de centrarse */
     this.alSoltarSeguimiento = null;
+    /**
+     * Recorrido del tren seguido: {clave, datos, color, capa, borde, hecho,
+     * pendiente, puntos, s, ultimoMs, pasadas}. null si no hay.
+     */
+    this.recorrido = null;
 
     const c = CONFIG.mapa;
     this.mapa = L.map(idContenedor, {
@@ -433,6 +470,7 @@ export class MapaTransporte {
       }
     }
     this._centrarEnSeguido();
+    this._actualizarRecorrido(t);
   }
 
   /* ---------- Seguir un tren ---------- */
@@ -462,6 +500,8 @@ export class MapaTransporte {
   seguir(id, { acercar = false } = {}) {
     const anterior = this.idSeguido;
     this.idSeguido = id;
+    // El recorrido es del tren seguido: al cambiar de tren (o dejarlo) se quita
+    if (id !== anterior) this.quitarRecorrido();
     this.centrarSeguido = Boolean(id);
     // Redibuja el icono del anterior y del nuevo para quitar o poner el resalte
     for (const idCambio of new Set([anterior, id])) {
@@ -491,6 +531,98 @@ export class MapaTransporte {
     this.mapa.once('moveend', () => {
       this.volando = false;
       this._centrarEnSeguido();
+    });
+  }
+
+  /* ---------- Recorrido del tren seguido ---------- */
+
+  /**
+   * Dibuja el recorrido completo del tren seguido (prepararRecorrido) y lo
+   * mantiene al día con su posición. Sustituye al que hubiera.
+   * @param {object} datos recorrido preparado
+   * @param {{clave:string, color:string}} opciones color = el de su línea
+   */
+  mostrarRecorrido(datos, { clave, color }) {
+    this.quitarRecorrido();
+    const comun = { interactive: false, lineCap: 'round', lineJoin: 'round' };
+    const capa = L.layerGroup();
+    // Borde blanco bajo todo el recorrido para que se distinga sobre el mapa
+    const borde = L.polyline([], { ...comun, color: '#ffffff', weight: 9, opacity: 0.85 }).addTo(capa);
+    const hecho = L.polyline([], { ...comun, color: COLOR_HECHO, weight: 5, opacity: 0.75 }).addTo(capa);
+    const pendiente = L.polyline([], { ...comun, color, weight: 5, opacity: 0.95 }).addTo(capa);
+    borde.setLatLngs(tramoCompleto(datos));
+
+    const ultima = datos.paradas.length - 1;
+    const puntos = datos.paradas.map((p, k) => {
+      const extremo = k === 0 || k === ultima;
+      const punto = L.circleMarker([p.lat, p.lon], {
+        radius: extremo ? 6 : 4.5,
+        weight: extremo ? 3 : 2.5,
+        color,
+        fillColor: '#ffffff',
+        fillOpacity: 1,
+        bubblingMouseEvents: false,
+      }).addTo(capa);
+      punto.bindTooltip('', { direction: 'top', offset: [0, -6], className: 'tooltip-parada', opacity: 1 });
+      // En pantallas táctiles no hay «pasar el ratón»: tocar la abre
+      punto.on('click', () => punto.openTooltip());
+      return punto;
+    });
+    capa.addTo(this.mapa);
+    this.recorrido = { clave, datos, color, capa, hecho, pendiente, puntos, s: undefined, ultimoMs: 0, pasadas: [], textos: [] };
+    this._actualizarRecorrido(performance.now(), { forzar: true });
+  }
+
+  /** Quita el recorrido dibujado (si lo hay) */
+  quitarRecorrido() {
+    this.recorrido?.capa.remove();
+    this.recorrido = null;
+  }
+
+  /** Distancia por el recorrido a la que está pintado ahora el tren seguido */
+  _distanciaSeguido(t) {
+    const registro = this.idSeguido && this.marcadores.get(this.idSeguido);
+    if (!registro) return null;
+    const p = registro.tramo ? posicionDe(registro.tramo, t) : registro.marcador.getLatLng();
+    const previa = this.recorrido.s;
+    return distanciaEnRecorrido(this.recorrido.datos, p.lat, p.lon ?? p.lng, previa ?? null);
+  }
+
+  /**
+   * Parte el recorrido por donde va el tren (gris lo hecho, color lo que
+   * queda) y actualiza las paradas. Se llama en cada fotograma y en cada
+   * lectura, pero solo recalcula cada INTERVALO_RECORRIDO_MS.
+   */
+  _actualizarRecorrido(t, { forzar = false } = {}) {
+    const r = this.recorrido;
+    if (!r || this.enZoom) return;
+    if (!forzar && t - r.ultimoMs < INTERVALO_RECORRIDO_MS) return;
+    r.ultimoMs = t;
+    const s = this._distanciaSeguido(t);
+    if (!forzar && r.s !== undefined && s !== null && r.s !== null && Math.abs(s - r.s) < AVANCE_MIN_RECORRIDO_M) return;
+    r.s = s;
+    const partes = partirRecorrido(r.datos, s);
+    r.hecho.setLatLngs(partes.hecho);
+    r.pendiente.setLatLngs(partes.pendiente);
+    this._pintarParadas(s);
+  }
+
+  /** Estilo y texto de cada parada: pasadas en gris; pendientes con su hora */
+  _pintarParadas(s) {
+    const r = this.recorrido;
+    const v = this.marcadores.get(this.idSeguido)?.vehiculo;
+    const retraso = v?.retrasoSeg >= RETRASO_MIN_PARADAS_S ? v.retrasoSeg : 0;
+    r.datos.paradas.forEach((p, k) => {
+      const pasada = paradaPasada(p, s);
+      if (r.pasadas[k] !== pasada) {
+        r.puntos[k].setStyle({ color: pasada ? COLOR_HECHO : r.color });
+        r.pasadas[k] = pasada;
+      }
+      const texto = textoParada(p, { pasada, retraso, segunHorario: v?.segunHorario });
+      if (r.textos[k] !== texto) {
+        r.puntos[k].setTooltipContent(texto);
+        r.textos[k] = texto;
+      }
     });
   }
 
@@ -538,6 +670,7 @@ export class MapaTransporte {
 
     // Un tren seguido parado no entra en el bucle de animación: se centra aquí
     this._centrarEnSeguido();
+    this._actualizarRecorrido(performance.now(), { forzar: true });
 
     for (const [id, registro] of this.marcadores) {
       if (!vistos.has(id)) {

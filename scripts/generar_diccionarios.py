@@ -43,7 +43,7 @@ para que el archivo solo cambie cuando Renfe cambie el trazado.
 Cada archivo de núcleo de horarios contiene:
   fechas      ["AAAA-MM-DD", ...]  (ayer, hoy, mañana)
   lineas      [[nombre, color, color de texto], ...]
-  estaciones  [[stop_id, nombre], ...]
+  estaciones  [[stop_id, nombre, lat, lon], ...]
   patrones    [[índice estación, ...], ...]   secuencias de paradas
   viajes      [[trip_id, índice fecha, índice línea, índice patrón,
                 salida en minutos, [minutos hasta cada parada siguiente]]]
@@ -64,6 +64,7 @@ import argparse
 import csv
 import io
 import json
+import math
 import sys
 import urllib.request
 import zipfile
@@ -354,7 +355,14 @@ def generar_horarios_cercanias(zf: zipfile.ZipFile, hoy: date) -> dict[str, dict
             if minuto is not None:
                 paradas.setdefault(st["trip_id"], []).append((int(st["stop_sequence"] or 0), st["stop_id"], minuto))
 
-    nombres = {s["stop_id"]: " ".join(s["stop_name"].split()) for s in leer_csv(zf, "stops.txt")}
+    nombres: dict[str, str] = {}
+    coordenadas: dict[str, tuple[float, float]] = {}
+    for s in leer_csv(zf, "stops.txt"):
+        nombres[s["stop_id"]] = " ".join(s["stop_name"].split())
+        try:
+            coordenadas[s["stop_id"]] = (round(float(s["stop_lat"]), 5), round(float(s["stop_lon"]), 5))
+        except (KeyError, ValueError):
+            pass  # sin coordenadas: la estación sale sin punto en el recorrido
     nucleos: dict[str, dict] = {}
     for trip_id, ((nucleo, linea, color, texto), indices_fecha) in viajes.items():
         lista = sorted(paradas.get(trip_id, []))
@@ -381,7 +389,9 @@ def generar_horarios_cercanias(zf: zipfile.ZipFile, hoy: date) -> dict[str, dict
             "generado": generado,
             "fechas": [d.isoformat() for d in fechas],
             "lineas": [list(k) for k in n["lineas"]],
-            "estaciones": [[sid, nombres.get(sid, sid)] for sid in n["estaciones"]],
+            # [stop_id, nombre, lat, lon]: las coordenadas sirven para dibujar
+            # las paradas del recorrido del tren seguido
+            "estaciones": [[sid, nombres.get(sid, sid), *coordenadas.get(sid, ())] for sid in n["estaciones"]],
             "patrones": [list(p) for p in n["patrones"]],
             "viajes": n["viajes"],
         }
@@ -448,23 +458,102 @@ def codificar_polilinea(puntos: list[tuple[float, float]]) -> str:
     return "".join(salida)
 
 
-def generar_trazados_cercanias(zf: zipfile.ZipFile) -> dict[str, dict[str, str]]:
-    """{núcleo: {shape_id: polilínea}} a partir de shapes.txt (unos 4 MB)."""
+def orientar_formas(formas: dict[str, list], datos: dict | None, zf: zipfile.ZipFile) -> set[str]:
+    """
+    Formas que hay que dar la vuelta para que vayan en el sentido de sus viajes.
+
+    En varias líneas (C2, C3, C4, C7 de Madrid, R3 de Rodalies…) el shapes.txt
+    de Renfe dibuja la geometría al revés que los viajes que la usan, tanto la
+    directa como la «_INV». La web supone que el trazado de cada viaje va en
+    su sentido de marcha (flecha, deslizamiento sin marcha atrás, recorrido),
+    así que se vota con el origen y el destino de cada viaje: si la mayoría
+    recorre la forma hacia atrás, se guarda invertida.
+    """
+    if not datos or not datos.get("trazados"):
+        return set()
+    coords = {}
+    for st in leer_csv(zf, "stops.txt"):
+        try:
+            coords[st["stop_id"]] = (float(st["stop_lat"]), float(st["stop_lon"]))
+        except (KeyError, ValueError):
+            pass
+    cache: dict[tuple[str, str], int] = {}
+
+    def indice_cercano(forma: str, parada: str) -> int | None:
+        """Índice del punto de la forma más cercano a la parada."""
+        clave = (forma, parada)
+        if clave not in cache:
+            c = coords.get(parada)
+            if not c:
+                return None
+            kx = math.cos(math.radians(c[0]))
+            cache[clave] = min(range(len(formas[forma])), key=lambda i: (formas[forma][i][0] - c[0]) ** 2 + ((formas[forma][i][1] - c[1]) * kx) ** 2)
+        return cache[clave]
+
+    votos: dict[str, list[int]] = {}  # forma guardada → [a favor, en contra]
+    sentido: dict[str, tuple[str, bool]] = {}  # trip_id → (forma guardada, ¿la recorre hacia delante?)
+    for tid, v in datos["viajes"].items():
+        if len(v) < 6:
+            continue
+        forma_viaje = datos["trazados"][v[5]][1]
+        invertida = forma_viaje.endswith("_INV") and forma_viaje[:-4] in formas
+        forma = forma_viaje[:-4] if invertida else forma_viaje
+        if forma not in formas:
+            continue
+        a, b = indice_cercano(forma, v[1]), indice_cercano(forma, v[2])
+        if a is None or b is None or a == b:
+            continue
+        hacia_delante = (b > a) != invertida
+        sentido[tid] = (forma, hacia_delante)
+        votos.setdefault(forma, [0, 0])[0 if hacia_delante else 1] += 1
+    al_reves = {f for f, (si, no) in votos.items() if no > si}
+    if al_reves:
+        print(f"  trazados de Cercanías al revés que sus viajes (se invierten): {len(al_reves)} de {len(votos)}", file=sys.stderr)
+
+    # Algunas líneas usan la misma forma en los dos sentidos (R3 de Rodalies):
+    # a los viajes que, aun así, van al contrario se les da la versión opuesta
+    # (con o sin «_INV»; la web invierte la que falte).
+    indice = {tuple(t): i for i, t in enumerate(datos["trazados"])}
+    cambiados = 0
+    for tid, (forma, hacia_delante) in sentido.items():
+        if hacia_delante != (forma in al_reves):
+            continue  # ya va en su sentido con la forma orientada
+        v = datos["viajes"][tid]
+        archivo, actual = datos["trazados"][v[5]]
+        opuesta = (archivo, actual[:-4] if actual.endswith("_INV") else f"{actual}_INV")
+        if opuesta not in indice:
+            indice[opuesta] = len(datos["trazados"])
+            datos["trazados"].append(list(opuesta))
+        v[5] = indice[opuesta]
+        cambiados += 1
+    if cambiados:
+        print(f"  viajes de Cercanías con la forma de su línea en el otro sentido: {cambiados}", file=sys.stderr)
+    return al_reves
+
+
+def generar_trazados_cercanias(zf: zipfile.ZipFile, datos: dict | None = None) -> dict[str, dict[str, str]]:
+    """
+    {núcleo: {shape_id: polilínea}} a partir de shapes.txt (unos 4 MB).
+    Con `datos` (el diccionario de Cercanías) cada forma se orienta en el
+    sentido de marcha de sus viajes (ver orientar_formas).
+    """
     if "shapes.txt" not in zf.namelist():
         print("  aviso: el GTFS de Cercanías no trae shapes.txt", file=sys.stderr)
         return {}
-    formas: dict[str, list] = {}
+    crudas: dict[str, list] = {}
     for f in leer_csv(zf, "shapes.txt"):
-        formas.setdefault(f["shape_id"], []).append(
+        crudas.setdefault(f["shape_id"], []).append(
             (int(f["shape_pt_sequence"] or 0), float(f["shape_pt_lat"]), float(f["shape_pt_lon"]))
         )
+    formas = {k: [(lat, lon) for _, lat, lon in sorted(v)] for k, v in crudas.items()}
+    al_reves = orientar_formas(formas, datos, zf)
     por_nucleo: dict[str, dict[str, str]] = {}
     for forma in sorted(formas):
         # El «_INV» es el mismo trazado al revés: la web lo invierte
         if forma.endswith("_INV") and forma[:-4] in formas:
             continue
         nucleo = NUCLEOS.get(forma.split("_")[0], "")
-        puntos = [(lat, lon) for _, lat, lon in sorted(formas[forma])]
+        puntos = formas[forma][::-1] if forma in al_reves else formas[forma]
         if not nucleo or len(puntos) < 2:
             continue
         por_nucleo.setdefault(nucleo, {})[forma] = codificar_polilinea(simplificar(puntos, TOLERANCIA_TRAZADO_M))
@@ -514,7 +603,7 @@ def main() -> int:
             datos = generar(clave, zf, dias)
             if clave == "cercanias":
                 guardar_horarios_cercanias(generar_horarios_cercanias(zf, hoy))
-                guardar_trazados_cercanias(generar_trazados_cercanias(zf))
+                guardar_trazados_cercanias(generar_trazados_cercanias(zf, datos))
         destino = SALIDA / f"{clave}.json"
         destino.write_text(json.dumps(datos, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         print(

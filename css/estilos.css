@@ -272,3 +272,23 @@ body[data-siguiendo='true'] .leyenda-mapa { display: none; }
   margin: 4px 0 0 8px; padding: 2px 0 2px 16px; border-left: 2px dashed #cbd5e1;
   font-size: 12px; font-weight: 500; color: #92400e;
 }
+
+/* ---------- Recorrido del tren seguido ---------- */
+
+/* Nombre y hora de cada parada (al pasar el ratón o al tocarla) */
+.tooltip-parada {
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: #0f172a;
+  color: #f8fafc;
+  font-size: 12px;
+  line-height: 1.35;
+  box-shadow: 0 2px 6px rgb(15 23 42 / 0.25);
+}
+.tooltip-parada::before {
+  border-top-color: #0f172a;
+}
+.tooltip-parada s {
+  opacity: 0.65;
+}

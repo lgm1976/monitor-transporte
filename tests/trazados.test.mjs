@@ -94,11 +94,14 @@ test('el diccionario da la referencia del trazado de cada viaje', () => {
   assert.deepEqual(ld.viaje('X').trazado, { archivo: 'ld/red', id: '1-2' });
 });
 
-test('el trazado real de la C4a va de Parla a Alcobendas', () => {
+test('el trazado real de la C4a va en el sentido de sus viajes', () => {
   const archivo = JSON.parse(readFileSync(new URL('../data/trazados/cercanias/madrid.json', import.meta.url)));
+  // Renfe da «10_C4a» a los viajes Alcobendas → Parla (el script orienta la forma)
   const c4 = trazadoDesdeArchivo(archivo, '10_C4a');
   assert.ok(c4.longitud > 35000 && c4.longitud < 50000, `longitud ${c4.longitud}`);
-  assert.ok(Math.abs(c4.lat[0] - 40.2414) < 0.001, 'empieza en Parla');
+  assert.ok(Math.abs(c4.lat[c4.lat.length - 1] - 40.2414) < 0.001, 'acaba en Parla');
+  const inv = trazadoDesdeArchivo(archivo, '10_C4a_INV');
+  assert.ok(Math.abs(inv.lat[0] - 40.2414) < 0.001, 'el _INV empieza en Parla');
   // Nuevos Ministerios queda sobre la vía
   const nm = proyectarEnTrazado(c4, 40.4459, -3.6925);
   assert.ok(nm && nm.distanciaM < 150, `a ${nm?.distanciaM} m`);
@@ -190,4 +193,12 @@ test('la red real lleva el AVE de Madrid a Barcelona por la vía', () => {
     const p = proyectarEnTrazado(t, lat, lon);
     assert.ok(p && p.distanciaM < 300, `a ${p?.distanciaM} m de ${lat},${lon}`);
   }
+});
+
+test('una forma guardada solo como «_INV» se obtiene también en el otro sentido', () => {
+  const archivo = { precision: 5, trazados: { X_INV: '_p~iF~ps|U_ulLnnqC' } };
+  const inv = trazadoDesdeArchivo(archivo, 'X_INV');
+  const directa = trazadoDesdeArchivo(archivo, 'X');
+  assert.equal(directa.lat[0], inv.lat[inv.lat.length - 1]);
+  assert.equal(trazadoDesdeArchivo(archivo, 'Y'), null);
 });

@@ -6,7 +6,8 @@
  *   2. creación del mapa y del panel
  *   3. selección de fuente (simulada o real)
  *   4. bucle de refresco con pausa, reintentos y ahorro en segundo plano
- *   5. seguimiento de un tren, enlace para compartirlo y filtros en la URL
+ *   5. seguimiento de un tren (con su recorrido), enlace para compartirlo
+ *      y filtros en la URL
  *
  * Parámetros de URL admitidos (se pueden combinar):
  *   ?modo=real|mock  ?tren=15868  ?servicio=AVE  ?nucleo=Madrid
@@ -22,6 +23,7 @@ import { PanelLateral } from './modulos/panel.js';
 import { PanelTrayecto } from './modulos/panelTrayecto.js';
 import { FuenteMock } from './fuentes/fuenteMock.js';
 import { FuenteGtfsRt } from './fuentes/fuenteGtfsRt.js';
+import { AlmacenRecorridos } from './fuentes/almacenRecorridos.js';
 
 /** Estado global de la aplicación (único y explícito) */
 const app = {
@@ -42,6 +44,10 @@ const app = {
    */
   seguido: null,
   temporizadorToast: null,
+  /** Paradas y vía del tren seguido, para dibujar su recorrido */
+  recorridos: new AlmacenRecorridos(),
+  /** Clave del recorrido que se está preparando (evita pedirlo dos veces) */
+  recorridoPedido: null,
   /** Pestaña del panel: 'trenes' | 'trayecto' */
   vista: 'trenes',
   trayecto: null,
@@ -174,6 +180,38 @@ async function compartirTren(id) {
   }
 }
 
+/**
+ * Recorrido completo del tren seguido. Se prepara (descargando lo que
+ * falte) la primera vez y cuando cambia su viaje; el mapa lo va partiendo
+ * en hecho y pendiente según avanza. Si el tren desaparece un momento del
+ * feed, el recorrido se queda dibujado mientras se sigue buscando.
+ */
+function actualizarRecorrido() {
+  if (!app.seguido) {
+    app.recorridoPedido = null;
+    app.mapa.quitarRecorrido();
+    return;
+  }
+  const v = vehiculoSeguido();
+  if (!v) return;
+  const clave = app.recorridos.clave(v);
+  if (app.mapa.recorrido?.clave === clave || app.recorridoPedido === clave) return;
+  app.recorridoPedido = clave;
+  app.recorridos
+    .obtener(v)
+    .then((datos) => {
+      // Mientras se preparaba, el usuario pudo cambiar de tren o dejar de seguirlo
+      if (app.recorridoPedido !== clave) return;
+      app.recorridoPedido = null;
+      if (!datos || app.mapa.idSeguido !== v.id) return;
+      app.mapa.mostrarRecorrido(datos, { clave, color: v.linea?.color || app.estilos?.theme?.accent || '#2563eb' });
+    })
+    .catch((error) => {
+      console.warn('[recorrido] no se pudo preparar:', error);
+      if (app.recorridoPedido === clave) app.recorridoPedido = null;
+    });
+}
+
 /** Tarjeta inferior con el estado del tren seguido, al día en cada lectura */
 function pintarSeguimiento() {
   const el = $('tarjeta-seguimiento');
@@ -252,6 +290,7 @@ function renderizar() {
   app.mapa.actualizar(visibles);
   app.panel.actualizar(app.vehiculos, visibles);
   app.trayecto?.actualizar(app.vehiculos);
+  actualizarRecorrido();
   pintarSeguimiento();
 }
 

@@ -188,6 +188,14 @@ export function vehiculosSegunHorario(datos, ahoraMs, { idFuente = 'horario', vi
       porVia: s.porVia,
       // Trazado del viaje completo (lista de paradas), para la animación
       trazadoRef: red && s.porVia ? { archivo: red, id: viaje.p.map((x) => est[x[0]][0]).join('-') } : null,
+      // Paradas con su hora de paso (salida; en destino, llegada) para el recorrido
+      paradasRecorrido: viaje.p.map(([e, llegada, salida], k) => ({
+        id: est[e][0],
+        nombre: est[e][1],
+        lat: est[e][2] ?? null,
+        lon: est[e][3] ?? null,
+        minutos: k === viaje.p.length - 1 ? llegada : salida,
+      })),
     });
   }
   return vehiculos;

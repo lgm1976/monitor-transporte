@@ -99,11 +99,14 @@ function rumboSegmento(t, i) {
  * @param {object} t trazado preparado
  * @param {number} lat
  * @param {number} lon
- * @param {{toleranciaM?:number, pistaS?:number|null, ventanaM?:number}} [opciones]
+ * Con `sMin` solo se aceptan puntos a partir de esa distancia (sirve
+ * para situar en orden las paradas de un recorrido).
+ *
+ * @param {{toleranciaM?:number, pistaS?:number|null, ventanaM?:number, sMin?:number}} [opciones]
  * @returns {{s:number, lat:number, lon:number, distanciaM:number, rumbo:number}|null}
  *          null si la posición está a más de `toleranciaM` de la vía
  */
-export function proyectarEnTrazado(t, lat, lon, { toleranciaM = 300, pistaS = null, ventanaM = 2000 } = {}) {
+export function proyectarEnTrazado(t, lat, lon, { toleranciaM = 300, pistaS = null, ventanaM = 2000, sMin = -Infinity } = {}) {
   const n = t.s.length;
   if (n < 2) return null;
   const px = lon * t.kx;
@@ -120,6 +123,7 @@ export function proyectarEnTrazado(t, lat, lon, { toleranciaM = 300, pistaS = nu
     const distancia = Math.hypot(px - ax - k * dx, py - ay - k * dy);
     if (distancia > toleranciaM) continue;
     const s = t.s[i] + k * (t.s[i + 1] - t.s[i]);
+    if (s < sMin) continue;
     const coste = distancia + (pistaS === null ? 0 : Math.max(0, Math.abs(s - pistaS) - ventanaM));
     if (coste < mejorCoste) {
       mejorCoste = coste;
@@ -178,7 +182,8 @@ export function posicionEnTramoVia(tramo, ahoraMs) {
 
 /**
  * Prepara un trazado guardado en un archivo de data/trazados.
- * Los «_INV» que no estén en el archivo se obtienen invirtiendo el directo.
+ * Los «_INV» que no estén en el archivo se obtienen invirtiendo el directo
+ * (y un directo que falte, invirtiendo su «_INV»).
  *
  * @param {{precision?:number, trazados:Object<string,string>}} archivo
  * @param {string} id shape_id
@@ -189,8 +194,11 @@ export function trazadoDesdeArchivo(archivo, id) {
   const formas = archivo?.trazados || {};
   const precision = archivo?.precision ?? 5;
   if (formas[id]) return prepararTrazado(decodificarPolilinea(formas[id], precision), id);
-  if (id.endsWith('_INV') && formas[id.slice(0, -4)]) {
-    return prepararTrazado(decodificarPolilinea(formas[id.slice(0, -4)], precision).reverse(), id);
+  // La versión opuesta de una forma que solo está en un sentido se obtiene
+  // invirtiéndola: «X_INV» a partir de «X» y, al revés, «X» a partir de «X_INV»
+  const opuesta = id.endsWith('_INV') ? id.slice(0, -4) : `${id}_INV`;
+  if (formas[opuesta]) {
+    return prepararTrazado(decodificarPolilinea(formas[opuesta], precision).reverse(), id);
   }
   return null;
 }

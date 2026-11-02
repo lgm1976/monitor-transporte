@@ -103,6 +103,16 @@ export function describirSituacion(estadoParada, nombreParada) {
 }
 
 /**
+ * Paradas de un viaje de larga distancia a partir de su trazado
+ * ("60000-04040-71801" → [{id, nombre}, ...]). null en Cercanías, cuyo
+ * trazado es el de la línea y sus paradas salen del horario del núcleo.
+ */
+export function paradasDelTrazado(ref, dicc) {
+  if (!ref?.id || ref.archivo.startsWith('cercanias/') || !ref.id.includes('-')) return null;
+  return ref.id.split('-').map((id) => ({ id, nombre: dicc.estacion(id) ?? id }));
+}
+
+/**
  * Añade a un vehículo normalizado los campos legibles.
  * No modifica los campos técnicos originales.
  *
@@ -158,5 +168,11 @@ export function enriquecerVehiculo(v, dicc) {
     conHorario: Boolean(viaje),
     /** Dónde está el trazado de su vía ({archivo, id}); lo resuelve AlmacenTrazados */
     trazadoRef: viaje?.trazado ?? null,
+    /**
+     * Paradas de su recorrido completo, si el diccionario las conoce: en
+     * larga distancia, el id del trazado es la lista de paradas del tren.
+     * Las coordenadas las pone AlmacenRecorridos (red de vías).
+     */
+    paradasRecorrido: paradasDelTrazado(viaje?.trazado, dicc),
   };
 }

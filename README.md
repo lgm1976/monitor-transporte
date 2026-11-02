@@ -6,7 +6,7 @@ Aplicación web estática que muestra en un mapa interactivo la posición y la p
 - **Modo simulado** con trenes que se mueven, para validar la interfaz sin depender de ninguna API
 - **Modo real** con varias fuentes en paralelo, retrasos cruzados desde TripUpdates y soporte protobuf bajo demanda
 - **Trenes por la vía**: Cercanías con el trazado de Renfe; AVE, larga y media distancia y OUIGO con las vías de OpenStreetMap. Se deslizan por las curvas con la flecha en su sentido de marcha
-- **Filtros por servicio y núcleo**, **seguir un tren** y **enlace para compartirlo**
+- **Filtros por servicio y núcleo**, **seguir un tren** (con su **recorrido completo** y sus paradas) y **enlace para compartirlo**
 - **Trenes OUIGO según horario** (OUIGO no publica datos en tiempo real)
 - **Próximo tren** entre dos estaciones de Cercanías, con cuenta atrás y retraso en vivo
 - Colores y umbrales de retraso definidos en `data/estilo_mapa.json`
@@ -26,6 +26,7 @@ js/
     horario.js             Posición estimada según horario (puro, testeable)
     trayectos.js           Próximos trenes de una estación a otra (puro, testeable)
     trazados.js            Trazados de vía: proyección, avance y red de larga distancia (puro, testeable)
+    recorrido.js           Recorrido del tren seguido: paradas, hecho y pendiente (puro, testeable)
     panelTrayecto.js       Pestaña «Próximo tren» del panel
     normalizador.js        GTFS-RT → modelo interno (puro, testeable)
     mapa.js                Leaflet: marcadores, movimiento continuo, fichas, leyenda
@@ -35,6 +36,7 @@ js/
     fuenteGtfsRt.js        Feeds reales (varias fuentes en paralelo)
     fuenteHorario.js       Trenes según horario (OUIGO), en los dos modos
     almacenTrazados.js     Carga bajo demanda los trazados (común a todas las fuentes)
+    almacenRecorridos.js   Vía y paradas del tren seguido (horarios, red de vías)
   utilidades/
     red.js                 fetch con timeout, proxy CORS y protobuf
     geo.js                 Distancia, rumbo e interpolación (puro, testeable)
@@ -148,7 +150,7 @@ Se ajusta en `CONFIG.animacion` (`modo: 'rapida'` vuelve al salto corto de antes
 En Cercanías el tren no va en línea recta entre dos posiciones, sino **siguiendo el trazado de su línea**, así que en las curvas no se sale de la vía:
 
 - Cada posición del feed se proyecta sobre el trazado del viaje (si está a menos de 300 m) y el tren se desliza **por distancia recorrida** a lo largo de la vía. La flecha gira con las curvas.
-- El trazado de cada viaje va en su sentido de marcha, así que la flecha sale orientada **desde el primer momento**, también con el tren parado (antes solo aparecía cuando se movía).
+- El trazado de cada viaje va en su sentido de marcha, así que la flecha sale orientada **desde el primer momento**, también con el tren parado (antes solo aparecía cuando se movía). Ver «Sentido de los trazados» más abajo.
 - Si la nueva posición queda unos metros por detrás (redondeos del feed), el tren se queda donde está: no va marcha atrás. Un retroceso grande o un salto de más de 25 km se pintan directamente.
 - Sin trazado (larga distancia, OUIGO, un viaje fuera del diccionario) o con la posición lejos de la vía, se mantiene el movimiento en línea recta.
 - Comprobado el 02/11/2026 con datos reales de Madrid: Renfe calcula las posiciones sobre su propio trazado (0 m de diferencia en los 310 trenes medidos), así que el problema era solo la animación. En 40 s de seguimiento, la separación máxima a la vía bajó de 46 m a 3 m (la tolerancia de la simplificación).
@@ -156,6 +158,13 @@ En Cercanías el tren no va en línea recta entre dos posiciones, sino **siguien
 Los trazados salen del `shapes.txt` del GTFS de Cercanías: 72 trazados (los `_INV` son el mismo al revés y la web los invierte), simplificados a 5 m y guardados como polilínea codificada, un archivo por núcleo en `data/trazados/cercanias/` (69 KB en total; Madrid 11 KB). Los genera la Action nocturna junto con los diccionarios; no llevan fecha, así que solo cambian si Renfe cambia un trazado. La web descarga cada núcleo la primera vez que aparece uno de sus trenes; mientras llega, ese tren se mueve en línea recta. El diccionario de Cercanías dice qué trazado lleva cada viaje (`trazados` y sexto campo de `viajes`).
 
 En el modo simulado, los trenes C4 y R1 avanzan por el trazado real de la C4a y la R1 a su velocidad, para validar la animación sin datos en vivo.
+
+**Sentido de los trazados (corregido el 02/11/2026).** En muchas líneas el `shapes.txt` de Renfe dibuja la geometría al revés que los viajes que la usan, tanto la directa como la `_INV` (C2, C3, C4, C7 y C8a de Madrid, por ejemplo: 41 de 69 trazados). Y en otras usa el mismo trazado para los dos sentidos (la R3 de Rodalies). Con eso, más de la mitad de los trenes de Cercanías llevaban la flecha al revés y, como «no van marcha atrás», saltaban en cada lectura en lugar de deslizarse. El script ahora:
+
+- da la vuelta a cada trazado si la mayoría de sus viajes lo recorren hacia atrás (vota con el origen y el destino de cada viaje);
+- a los viajes que aun así van al contrario les asigna la versión opuesta (con o sin `_INV`; la web invierte la que no esté guardada).
+
+Resultado: de 9.419 viajes con trazado, 4.953 iban al revés; ahora ninguno. Con dos lecturas reales del feed separadas 45 s, los trenes de Cercanías que avanzan hacia delante por su vía pasaron de 39 de 68 a 61 de 68. Los 7 restantes son trenes a los que el feed de Renfe sigue asignando un viaje ya terminado (van en sentido contrario al de ese viaje); se colocan sin deslizar, como antes.
 
 Se ajusta en `CONFIG.trazados` (`activos: false` vuelve a la línea recta en todos los trenes).
 
@@ -227,6 +236,33 @@ La URL refleja siempre el estado, así que también se pueden guardar vistas en 
 | `nucleo` | `Madrid` | Filtra por núcleo de Cercanías |
 
 En el modo simulado los trenes C4 y R1 tienen núcleo (Madrid y Rodalies de Catalunya) para poder probar el filtro: en `data/diccionarios/mock.json` el grupo de la línea se escribe «Cercanías Madrid».
+
+## Recorrido del tren seguido
+
+Al seguir un tren (desde su ficha, por enlace o con «Ver en el mapa» en «Próximo tren») se dibuja su **recorrido completo de origen a destino**:
+
+- Lo ya recorrido, en **gris tenue**; lo que le queda, en el **color de su línea** (azul de la interfaz en larga distancia, que no tiene color propio; rosa en OUIGO). El corte avanza con el tren por la vía, recalculado como mucho cada 0,4 s.
+- Un **punto en cada parada**, más grande en origen y destino; las ya pasadas, en gris. Al pasar el ratón (o tocarla en el móvil) se ve el nombre y la hora: «Getafe Centro · 10:15». Si el tren va con retraso, en las que faltan aparece la hora programada tachada y la prevista: «~~10:15~~ 10:19». En OUIGO, «(horario)».
+- Desaparece al dejar de seguir el tren. Si el tren desaparece un momento del feed, el recorrido se queda mientras se sigue buscando.
+
+De dónde salen las paradas (`js/fuentes/almacenRecorridos.js`):
+
+| Tren | Vía | Paradas |
+|---|---|---|
+| Cercanías | Trazado de Renfe de su línea | Horario del núcleo (`data/horarios/cercanias/`), cruzando por `trip_id`, con la hora de paso. Si el viaje no está (modo simulado, fuera de la ventana de tres días), las estaciones del núcleo que caen a menos de 120 m de su vía, sin hora |
+| AV / LD / MD | Red de OpenStreetMap | La lista de paradas del id de su recorrido (`60000-04040-71801`), con nombre del diccionario y coordenadas de `data/trazados/ld/red.json`, sin hora |
+| OUIGO | Red de OpenStreetMap | Las de su horario, con la hora de salida (de llegada en destino) |
+
+Cómo se monta (`js/modulos/recorrido.js`):
+
+- Cada parada se sitúa sobre la vía en orden (sin volver atrás, así funciona aunque la línea pase dos veces cerca del mismo sitio) y se une con la siguiente **por la vía**. Si alguna queda a más de 500 m del trazado, ese tramo se une **en línea recta**: hay trazados de Renfe que no cubren todo el viaje (el C1 del aeropuerto acaba en Chamartín aunque el tren siga hasta Atocha).
+- El dibujo empieza y acaba en las paradas del tren, aunque el trazado sea el de toda la línea (un C4 que empieza en Atocha no pinta el tramo desde Parla).
+- Sin trazado, todas las paradas se unen en línea recta.
+- La posición del tren se proyecta sobre el recorrido para partirlo; si está a más de 3 km (datos erróneos), todo queda como pendiente.
+
+Para dibujar las paradas de Cercanías, los horarios por núcleo llevan ahora las coordenadas de cada estación (`[stop_id, nombre, lat, lon]`; unos 2 KB más en Madrid).
+
+Comprobado el 02/11/2026: en modo simulado (MD Sevilla → Málaga por la red de OSM con sus cinco paradas, C4 Parla → Alcobendas con quince) y en real con un C5 de Madrid (22 paradas con hora), un R11 de Rodalies, un MD Ourense → Lugo, un C1 del aeropuerto y un OUIGO Barcelona → Sevilla. En los 2.320 viajes de Cercanías Madrid, más del 95 % tienen todas sus paradas (o todas menos una) sobre su vía.
 
 ## Próximo tren entre dos estaciones
 
@@ -312,7 +348,7 @@ con `css/tailwind-entrada.css` conteniendo las tres directivas `@tailwind base; 
 
 Usa las teselas estándar de OpenStreetMap, que no piden clave pero están pensadas para tráfico ligero (consulta su política de uso). Si el proyecto gana visitas, cambia `CONFIG.mapa.teselas` por un proveedor con clave gratuita (MapTiler, Stadia Maps, Thunderforest). Los estilos de CARTO ahora exigen clave y muestran una marca de agua sin ella.
 
-## Plan: que los trenes vayan siempre por las vías (fases 1 y 2 hechas)
+## Plan: que los trenes vayan siempre por las vías (fases 1, 2 y 3 hechas)
 
 Diagnóstico del 01/11/2026. Los trenes se salían de la vía por tres motivos:
 
@@ -324,7 +360,9 @@ Fases:
 
 1. **Cercanías. Hecha el 02/11/2026** con `shapes.txt` de Renfe (ver «Por la vía (Cercanías)»).
 2. **Larga distancia y OUIGO. Hecha el 02/11/2026** con OpenStreetMap (ver «Por la vía (larga distancia y OUIGO)»).
-3. Opcional: dibujar el trazado de la línea del tren seguido.
+3. **Recorrido del tren seguido. Hecha el 02/11/2026** (ver «Recorrido del tren seguido»). Decisiones de Luis: recorrido completo de origen a destino que desaparece al dejar de seguir; lo hecho en gris tenue y lo pendiente en el color de su línea; puntos en las paradas con nombre al pasar el ratón o tocar; sin trazado, paradas unidas en línea recta. De paso se corrigió el sentido de los trazados de Cercanías (ver «Sentido de los trazados»).
+
+Evolución prevista: que cada parada del recorrido muestre los trenes que pasarán por ella a lo largo del día.
 
 Si un tren no tiene trazado, o su posición está lejos de la vía (desvíos, datos erróneos), se mantiene el movimiento en línea recta.
 
@@ -334,7 +372,8 @@ Si un tren no tiene trazado, o su posición está lejos de la vía (desvíos, da
 - Arrancar centrado en la zona del usuario (con permiso de ubicación).
 - Panel de estación con próximas llegadas y favoritos («mi C-4 de cada mañana»).
 - Ofrecer el transbordo también cuando llega antes que el directo; dos transbordos; Media Distancia.
-- Dibujar el trazado de la línea del tren seguido (fase 3; los datos ya están en `data/trazados`).
+- Paradas del recorrido con los trenes que pasarán por ellas a lo largo del día (evolución de la fase 3).
+- Horas de paso en las paradas de larga distancia (el diccionario `ld.json` solo guarda origen y destino).
 - Mostrar un solo marcador por tren en larga distancia: Renfe envía la misma posición en cada viaje solapado del mismo tren (Vigo → Barcelona, León → Barcelona…).
 - Capa de avisos de servicio (`Alert` de GTFS-RT).
 - Filtro por operador cuando haya fuentes de otros operadores.
