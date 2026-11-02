@@ -78,7 +78,7 @@
         <section id="vista-estacion" role="tabpanel" aria-labelledby="pestana-estacion" hidden class="flex min-h-0 flex-1 flex-col">
           <div class="space-y-2 border-b border-slate-200 p-4">
             <label class="block">
-              <span class="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Cercanías de</span>
+              <span class="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">Red</span>
               <select id="estacion-red" class="selector"></select>
             </label>
             <label class="block">
@@ -93,11 +93,12 @@
               </button>
               <button id="estacion-ver" type="button" class="trayecto-ver" hidden>Ver en el mapa</button>
             </div>
+            <button id="estacion-otra-red" type="button" class="estacion-otra-red" hidden></button>
             <p id="estacion-lineas" class="trayecto-lineas"></p>
           </div>
           <div id="estacion-avisos" class="estacion-avisos" hidden></div>
           <ul id="estacion-resultados" class="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto" aria-live="polite"></ul>
-          <p class="trayecto-nota">Trenes de los dos sentidos. Retraso en vivo de los que ya circulan; el resto, según horario. El andén aparece cuando Renfe da el tren llegando a la estación.</p>
+          <p id="estacion-nota" class="trayecto-nota">Trenes de los dos sentidos. Retraso en vivo de los que ya circulan; el resto, según horario. El andén aparece cuando Renfe da el tren llegando a la estación.</p>
         </section>
 
         <!-- Vista «Avisos»: incidencias, obras y accesibilidad -->

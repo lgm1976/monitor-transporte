@@ -15,7 +15,7 @@
           "Ver todos los trenes en el mapa con un color según su puntualidad y filtrarlos por tipo de servicio o por núcleo de Cercanías.",
           "Seguir un tren, con su recorrido y la hora de paso por cada parada, y mandar el enlace a quien te espera.",
           "Consultar el próximo tren entre dos estaciones de Cercanías, también con un transbordo.",
-          "Ver los próximos trenes de una estación y guardar tus estaciones y trayectos favoritos.",
+          "Ver los próximos trenes de una estación, de Cercanías o de larga distancia, y guardar tus estaciones y trayectos favoritos.",
           "Leer los avisos de servicio de Renfe Cercanías: incidencias, obras y accesibilidad."
         ]
       },
@@ -40,6 +40,17 @@
     ]
   },
   "versiones": [
+    {
+      "version": "1.11",
+      "fecha": "2026-11-02",
+      "titulo": "Panel de estación para larga distancia",
+      "cambios": [
+        "En la pestaña «Estación» puedes elegir la red «Larga y media distancia» y ver los próximos AVE, Avlo, Alvia, Intercity, Media Distancia, Regionales y OUIGO de cualquier estación, en los dos sentidos, con la cuenta atrás y el retraso en vivo de los trenes de Renfe que ya circulan.",
+        "Si el tren para un rato en la estación, verás a qué hora llega y a qué hora sale. Puedes filtrar por tipo de tren y guardar la estación en favoritos.",
+        "Las estaciones de larga distancia aparecen en el mapa como puntos oscuros: con el mapa alejado, las principales; al acercarte, todas. Tócalas para ver sus trenes, igual que las paradas del recorrido de un AVE o un Media Distancia que estés siguiendo.",
+        "Si una estación tiene trenes de Cercanías y de larga distancia (Chamartín, Atocha, Zaragoza Delicias…), un botón te lleva de unos a otros."
+      ]
+    },
     {
       "version": "1.10",
       "fecha": "2026-11-02",

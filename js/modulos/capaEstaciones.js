@@ -1,19 +1,42 @@
 /**
  * capaEstaciones.js
  * ---------------------------------------------------------------
- * Estaciones de Cercanías en el mapa. Aparecen al acercar el zoom
- * (CONFIG.estacionesMapa.zoomMin) y al tocarlas se abre su panel con los
- * próximos trenes. También señala la estación elegida en la pestaña
- * «Estación», a cualquier zoom.
+ * Estaciones en el mapa; al tocarlas se abre su panel con los próximos
+ * trenes. También señala la estación elegida en la pestaña «Estación», a
+ * cualquier zoom.
  *
- * Las coordenadas salen de los horarios por núcleo (los mismos que usa el
- * estimador); solo se descargan los núcleos cuya caja de estaciones
- * (indice.json) cae en la vista.
+ *   - Cercanías: puntos blancos al acercar el zoom
+ *     (CONFIG.estacionesMapa.zoomMin). Las coordenadas salen de los
+ *     horarios por núcleo (los mismos que usa el estimador); solo se
+ *     descargan los núcleos cuya caja de estaciones (indice.json) cae en
+ *     la vista.
+ *   - Larga distancia (AV/LD/MD y OUIGO): puntos oscuros con borde blanco,
+ *     desde más lejos. Con poco zoom solo las estaciones con más trenes
+ *     (CONFIG.estacionesMapa.largaDistancia.umbrales); acercando, todas.
+ *     Si una estación está en las dos redes se pinta una vez, como de
+ *     larga distancia, y al tocarla abre Cercanías con el mapa muy cerca
+ *     (zoom de Cercanías) y larga distancia con el mapa más lejos. El
+ *     panel tiene un botón para pasar a la otra red.
  */
 
 import { CONFIG } from '../config.js';
 import { escaparHtml } from './mapa.js';
 import { AlmacenHorariosCercanias } from '../fuentes/almacenHorariosCercanias.js';
+import { RED_LARGA_DISTANCIA } from './estacion.js';
+
+/**
+ * Viajes mínimos (en los tres días del horario) para pintar una estación de
+ * larga distancia con cada zoom: [zoom desde el que vale, mínimo]. Sin
+ * entrada para el zoom, no se pinta ninguna.
+ */
+export const UMBRALES_LARGA_DISTANCIA = [[6, 100], [8, 60], [9, 30], [10, 12], [11, 0]];
+
+/** Mínimo de viajes para el zoom (Infinity: ninguna estación) */
+export function minimoViajes(zoom, umbrales = UMBRALES_LARGA_DISTANCIA) {
+  let minimo = Infinity;
+  for (const [z, m] of umbrales) if (zoom >= z) minimo = m;
+  return minimo;
+}
 
 /** ¿Se cruzan la caja [latMin, lonMin, latMax, lonMax] y los límites de Leaflet? */
 export function cajaEnVista(caja, limites) {
@@ -42,6 +65,9 @@ export class CapaEstaciones {
     this.capa = L.layerGroup().addTo(mapa);
     this.marca = null;
     this.pintadas = '';
+    const ld = CONFIG.estacionesMapa?.largaDistancia ?? {};
+    this.ldActivas = ld.activas !== false;
+    this.umbralesLd = ld.umbrales ?? UMBRALES_LARGA_DISTANCIA;
     mapa.on('moveend', () => this.actualizar());
     this.horarios.indice().then((indice) => {
       this.indice = indice;
@@ -49,48 +75,81 @@ export class CapaEstaciones {
     }).catch(() => { /* sin índice no hay estaciones en el mapa; el resto sigue */ });
   }
 
-  /** Dibuja las estaciones de la vista (descargando los núcleos que falten) */
+  /** Dibuja las estaciones de la vista (descargando los horarios que falten) */
   actualizar() {
-    if (!this.indice || CONFIG.estacionesMapa?.activas === false) return;
-    if (this.mapa.getZoom() < this.zoomMin) {
-      if (this.pintadas) {
-        this.capa.clearLayers();
-        this.pintadas = '';
-      }
-      return;
-    }
+    if (CONFIG.estacionesMapa?.activas === false) return;
+    const zoom = this.mapa.getZoom();
     const limites = this.mapa.getBounds().pad(0.2);
-    const nucleos = this.indice.filter((n) => cajaEnVista(n.caja, limites));
-    const faltan = nucleos.filter((n) => !this.horarios.obtenerPreparado(n.slug));
-    if (faltan.length) {
-      Promise.all(faltan.map((n) => this.horarios.cargarPreparado(n.slug))).then(() => this.actualizar());
-    }
     const visibles = [];
-    const vistas = new Set();
-    for (const n of nucleos) {
-      const horario = this.horarios.obtenerPreparado(n.slug);
-      if (!horario) continue;
-      for (const [id, nombre, lat, lon] of horario.estaciones) {
-        if (!Number.isFinite(lat) || vistas.has(id) || !limites.contains([lat, lon])) continue;
-        vistas.add(id);
-        visibles.push({ red: n.slug, nucleo: n.nucleo, id: String(id), nombre, lat, lon });
+    const vistas = new Map();
+
+    // Larga distancia: las más importantes con poco zoom, todas al acercarse
+    const minimo = this.ldActivas ? minimoViajes(zoom, this.umbralesLd) : Infinity;
+    if (minimo < Infinity) {
+      const ld = this.horarios.obtenerPreparado(RED_LARGA_DISTANCIA);
+      if (ld === undefined) this.horarios.cargarPreparado(RED_LARGA_DISTANCIA).then(() => this.actualizar());
+      ld?.estaciones.forEach(([id, nombre, lat, lon], i) => {
+        const viajes = ld.viajesPorEstacion?.[i] ?? 0;
+        if (!Number.isFinite(lat) || viajes < Math.max(1, minimo) || !limites.contains([lat, lon])) return;
+        const e = { red: RED_LARGA_DISTANCIA, id: String(id), nombre, lat, lon, ld: true, principal: viajes >= 100 };
+        vistas.set(e.id, e);
+        visibles.push(e);
+      });
+    }
+
+    // Cercanías: con el mapa cerca
+    if (this.indice && zoom >= this.zoomMin) {
+      const nucleos = this.indice.filter((n) => cajaEnVista(n.caja, limites));
+      const faltan = nucleos.filter((n) => !this.horarios.obtenerPreparado(n.slug));
+      if (faltan.length) {
+        Promise.all(faltan.map((n) => this.horarios.cargarPreparado(n.slug))).then(() => this.actualizar());
+      }
+      for (const n of nucleos) {
+        const horario = this.horarios.obtenerPreparado(n.slug);
+        if (!horario) continue;
+        for (const [id, nombre, lat, lon] of horario.estaciones) {
+          if (!Number.isFinite(lat) || !limites.contains([lat, lon])) continue;
+          const ya = vistas.get(String(id));
+          if (ya) {
+            // En las dos redes: se pinta una vez y, tan cerca, abre Cercanías
+            if (ya.ld && !ya.nucleo) Object.assign(ya, { red: n.slug, nucleo: n.nucleo });
+            continue;
+          }
+          const e = { red: n.slug, nucleo: n.nucleo, id: String(id), nombre, lat, lon };
+          vistas.set(e.id, e);
+          visibles.push(e);
+        }
       }
     }
-    const firma = visibles.map((e) => e.id).join(',');
+
+    const firma = visibles.map((e) => `${e.id}${e.red}`).join(',');
     if (firma === this.pintadas) return;
     this.pintadas = firma;
     this.capa.clearLayers();
+    // Las de larga distancia, encima de las de Cercanías
+    visibles.sort((a, b) => Number(Boolean(a.ld)) - Number(Boolean(b.ld)));
     for (const e of visibles) {
-      const m = L.circleMarker([e.lat, e.lon], {
-        renderer: this.renderer,
-        radius: 4.5,
-        weight: 2,
-        color: '#334155',
-        fillColor: '#ffffff',
-        fillOpacity: 1,
-        bubblingMouseEvents: false,
-      });
-      m.bindTooltip(`${escaparHtml(e.nombre)}<small>Cercanías ${escaparHtml(e.nucleo)} · toca para ver sus trenes</small>`, {
+      const m = L.circleMarker([e.lat, e.lon], e.ld
+        ? {
+          renderer: this.renderer,
+          radius: e.principal ? 5.5 : 4.5,
+          weight: 2,
+          color: '#ffffff',
+          fillColor: '#1e293b',
+          fillOpacity: 1,
+          bubblingMouseEvents: false,
+        }
+        : {
+          renderer: this.renderer,
+          radius: 4.5,
+          weight: 2,
+          color: '#334155',
+          fillColor: '#ffffff',
+          fillOpacity: 1,
+          bubblingMouseEvents: false,
+        });
+      const red = e.ld && e.nucleo ? `Larga distancia y Cercanías ${escaparHtml(e.nucleo)}` : e.ld ? 'Larga y media distancia' : `Cercanías ${escaparHtml(e.nucleo)}`;
+      m.bindTooltip(`${escaparHtml(e.nombre)}<small>${red} · toca para ver sus trenes</small>`, {
         direction: 'top', offset: [0, -5], className: 'tooltip-estacion', opacity: 1,
       });
       m.on('click', () => this.alElegir({ red: e.red, estacion: e.id }));

@@ -358,6 +358,18 @@ body[data-siguiendo='true'] .leyenda-mapa { display: none; }
 .tooltip-estacion::before { border-top-color: #0f172a; }
 .tooltip-estacion small { display: block; opacity: 0.7; font-size: 11px; }
 .boton-favorito[hidden], .acciones-estacion [hidden] { display: none; }
+/* «También tiene trenes de larga distancia / de Cercanías» */
+.estacion-otra-red {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 6px 10px; border-radius: 8px; border: 1px solid #e2e8f0; background: #f8fafc;
+  font-size: 12px; color: #334155; text-align: left;
+}
+.estacion-otra-red:hover { background: #f1f5f9; border-color: #cbd5e1; }
+.estacion-otra-red:focus-visible { outline: 2px solid var(--color-acento, #2563eb); outline-offset: 2px; }
+.estacion-otra-red[hidden] { display: none; }
+.estacion-otra-red .flecha { margin-left: auto; color: #94a3b8; font-size: 15px; line-height: 1; }
+.estacion-otra-red svg { flex-shrink: 0; color: #64748b; }
+.trayecto-detalle .llegada-ld { color: #64748b; }
 
 /* ---------- Avisos de servicio ---------- */
 .pestana-icono + .pestana-icono { margin-left: 0; }

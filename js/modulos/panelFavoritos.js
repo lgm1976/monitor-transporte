@@ -9,7 +9,7 @@
  */
 
 import { escaparHtml } from './mapa.js';
-import { resumenFavorito, claveFavorito } from './estacion.js';
+import { resumenFavorito, claveFavorito, vehiculosPorViaje, RED_LARGA_DISTANCIA, NOMBRE_LARGA_DISTANCIA } from './estacion.js';
 import { AlmacenHorariosCercanias } from '../fuentes/almacenHorariosCercanias.js';
 
 const INTERVALO_CUENTA_MS = 20000;
@@ -72,7 +72,7 @@ export class PanelFavoritos {
         </li>`;
       return;
     }
-    const enVivo = new Map(this.vehiculos.filter((v) => v.tripId && !v.segunHorario).map((v) => [v.tripId, v]));
+    const enVivo = vehiculosPorViaje(this.vehiculos);
     const ahora = Date.now();
     this.el.innerHTML = lista
       .map((f) => {
@@ -87,7 +87,7 @@ export class PanelFavoritos {
             <span class="favorito-icono" aria-hidden="true">${icono}</span>
             <span class="favorito-cuerpo">
               <span class="favorito-nombre">${escaparHtml(f.nombre || clave)}</span>
-              <span class="favorito-nucleo">${f.tipo === 'trayecto' ? 'Trayecto' : 'Estación'} · Cercanías ${escaparHtml(f.nucleo || f.red)}</span>
+              <span class="favorito-nucleo">${f.tipo === 'trayecto' ? 'Trayecto' : 'Estación'} · ${f.red === RED_LARGA_DISTANCIA ? NOMBRE_LARGA_DISTANCIA : `Cercanías ${escaparHtml(f.nucleo || f.red)}`}</span>
               <span class="favorito-resumen">${escaparHtml(resumen?.texto ?? 'Cargando horario…')}</span>
             </span>
           </button>

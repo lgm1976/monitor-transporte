@@ -121,3 +121,109 @@ test('resumen en vivo de cada favorito', () => {
   assert.equal(t.texto, 'C2 ahora · llega 10:09');
   assert.equal(resumenFavorito({ tipo: 'estacion', red: 'x', estacion: 'B' }, null, ahora), null);
 });
+
+/* ---------- Larga distancia ---------- */
+
+import { combinarHorarios, horarioDesdeOuigo, numeroTren, textoEnEstacion } from '../js/modulos/estacion.js';
+
+// Renfe: el AVE 03091 Madrid → Zaragoza → Barcelona y su viaje solapado
+// Zaragoza → Barcelona (mismo número), y un Alvia que termina en Zaragoza.
+// Siete campos por viaje: el último, minutos parado en cada estación.
+const renfe = {
+  nucleo: 'Larga distancia',
+  fechas: ['2026-11-01', '2026-11-02'],
+  lineas: [['AVE', '', ''], ['Alvia', '', '']],
+  estaciones: [['60000', 'Madrid-Puerta de Atocha', 40.406, -3.69], ['04040', 'Zaragoza Delicias', 41.658, -0.911], ['71801', 'Barcelona-Sants', 41.379, 2.141]],
+  patrones: [[0, 1, 2], [1, 2], [0, 1]],
+  viajes: [
+    ['0309112026-11-01', 0, 0, 0, 600, [88, 87], [0, 3, 0]], // Zaragoza llega 11:25, sale 11:28 (los minutos son de salida)
+    ['0309122026-11-01', 0, 0, 1, 688, [87], [0, 0]], //         sale de Zaragoza 11:28
+    ['0418012026-11-01', 0, 1, 2, 620, [100], [0, 0]], //        Alvia: llega a Zaragoza 12:00
+  ],
+};
+// OUIGO: Madrid 10:30 → Zaragoza (llega 11:45, sale 11:47) → Barcelona 13:15
+const ouigo = {
+  operador: 'OUIGO', color: '#E5007D', colorTexto: '#FFFFFF',
+  estaciones: [['60000', 'Madrid-Puerta de Atocha', 40.406, -3.69], ['04040', 'Zaragoza Delicias', 41.658, -0.911], ['71801', 'Barcelona-Sants', 41.379, 2.141]],
+  viajes: [{ f: '2026-11-01', n: '6213', p: [[0, 630, 630], [1, 705, 707], [2, 795, 795]] }],
+};
+
+test('número de tren en los tres formatos', () => {
+  assert.equal(numeroTren('3004D18779C3'), '18779');
+  assert.equal(numeroTren('0309112026-11-01'), '03091');
+  assert.equal(numeroTren('6213-2026-11-01'), '6213');
+  assert.equal(numeroTren('raro'), null);
+});
+
+test('horario de OUIGO con el formato de un núcleo', () => {
+  const h = horarioDesdeOuigo(ouigo);
+  assert.deepEqual(h.fechas, ['2026-11-01']);
+  assert.deepEqual(h.lineas, [['OUIGO', 'E5007D', 'FFFFFF']]);
+  assert.deepEqual(h.viajes[0], ['6213-2026-11-01', 0, 0, 0, 630, [77, 88], [0, 2, 0]]);
+});
+
+test('combinar horarios: estaciones y fechas comunes', () => {
+  const ld = combinarHorarios([renfe, horarioDesdeOuigo(ouigo)]);
+  assert.equal(ld.largaDistancia, true);
+  assert.equal(ld.estaciones.length, 3);
+  assert.deepEqual(ld.lineas.map((l) => l[0]), ['AVE', 'Alvia', 'OUIGO']);
+  assert.equal(ld.viajes.length, 4);
+  assert.deepEqual(ld.viajesPorEstacion, [3, 4, 3]);
+  assert.equal(textoEnEstacion(ld), 'en la estación');
+  assert.equal(textoEnEstacion(nucleo), 'en el andén');
+});
+
+test('larga distancia: viajes solapados unidos, llegada y salida, colores y OUIGO', () => {
+  const ld = combinarHorarios([renfe, horarioDesdeOuigo(ouigo)]);
+  const r = trenesEnEstacion(ld, '04040', enMadrid('11:00'));
+  assert.deepEqual(r.map((t) => t.numeroTren), ['03091', '6213', '04180']);
+  const ave = r[0];
+  // El viaje solapado que empieza en Zaragoza no lo convierte en «sale de aquí»
+  assert.equal(ave.empieza, false);
+  assert.equal(ave.desdeNombre, 'Madrid-Puerta de Atocha');
+  assert.equal(ave.haciaNombre, 'Barcelona-Sants');
+  assert.equal(ave.hora, '11:28');
+  assert.equal(ave.llegada, '11:25');
+  assert.equal(ave.linea.color, '#5B2C86');
+  assert.equal(ave.linea.colorTexto, '#FFFFFF');
+  const tren = r[1];
+  assert.equal(tren.segunHorario, true);
+  assert.equal(tren.linea.color, '#E5007D');
+  assert.equal(tren.hora, '11:47');
+  assert.equal(tren.llegada, '11:45');
+  const alvia = r[2];
+  assert.equal(alvia.termina, true);
+  assert.equal(alvia.llegada, null);
+});
+
+test('larga distancia: retraso en vivo por cualquiera de sus viajes y OUIGO en el mapa', () => {
+  const ld = combinarHorarios([renfe, horarioDesdeOuigo(ouigo)]);
+  const vehiculo = { id: 'renfe-ld:03091', retrasoSeg: 600, paradaId: '04040', estadoParada: 'INCOMING_AT' };
+  const enVivo = new Map([
+    // El panel registra el vehículo con su viaje y con los solapados
+    ['0309112026-11-01', vehiculo],
+    ['0309122026-11-01', vehiculo],
+    ['6213-2026-11-01', { id: 'ouigo:6213', segunHorario: true }],
+  ]);
+  const r = trenesEnEstacion(ld, '04040', enMadrid('11:00'), enVivo);
+  const ave = r.find((t) => t.numeroTren === '03091');
+  assert.equal(ave.enVivo, true);
+  assert.equal(ave.retrasoMin, 10);
+  assert.equal(ave.horaPrevista, '11:38');
+  assert.equal(ave.llegadaPrevista, '11:35');
+  const tren = r.find((t) => t.numeroTren === '6213');
+  assert.equal(tren.enVivo, false);
+  assert.equal(tren.idVehiculo, 'ouigo:6213');
+  // Un tren que ya ha dejado atrás la estación no aparece
+  const pasado = new Map([['0309112026-11-01', { ...vehiculo, paradaId: '71801' }]]);
+  assert.ok(!trenesEnEstacion(ld, '04040', enMadrid('11:00'), pasado).some((t) => t.numeroTren === '03091' && t.enVivo));
+});
+
+test('estaciones de larga distancia en el mapa según el zoom', async () => {
+  const { minimoViajes } = await import('../js/modulos/capaEstaciones.js');
+  assert.equal(minimoViajes(5), Infinity);
+  assert.equal(minimoViajes(6), 100);
+  assert.equal(minimoViajes(9), 30);
+  assert.equal(minimoViajes(12), 0);
+  assert.equal(minimoViajes(7, [[8, 5]]), Infinity);
+});

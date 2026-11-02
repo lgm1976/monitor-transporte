@@ -155,6 +155,8 @@ export class FuenteMock {
       if (paradas.length < 2) continue;
       // El tren simulado se para de verdad en las intermedias que tiene por delante
       entidad._paradasVia = paradas.slice(1, -1).filter((p) => p.s > entidad._via.s).map(({ id, s: sp }) => ({ id, s: sp }));
+      // Desde la primera lectura, la parada a la que va (el panel de estación la usa)
+      if (entidad._paradasVia[0] && entidad.vehicle.current_status !== 'STOPPED_AT') entidad.vehicle.stop_id = entidad._paradasVia[0].id;
       // Paradas de dos minutos en las intermedias: la salida se retrasa lo que se acumula
       let acumulado = 0;
       const salidas = paradas.map((p, k) => {

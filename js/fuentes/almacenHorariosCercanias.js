@@ -17,6 +17,13 @@
  * clave «ld»), con el mismo formato, y el que monta el modo simulado
  * («ld-simulado», que no se descarga: lo registra la fuente simulada).
  *
+ * Para el panel de estación, las estaciones del mapa y los favoritos,
+ * `cargarPreparado('ld')` y `obtenerPreparado('ld')` no dan el horario de
+ * Renfe tal cual, sino la «red» de larga distancia completa: el de Renfe
+ * unido al de OUIGO («ouigo», data/horarios/ouigo.json) y, en el modo
+ * simulado, al simulado (estacion.js → combinarHorarios). El estimador y
+ * el recorrido siguen usando `obtener('ld')` y `cargar('ld')`.
+ *
  * Si una descarga falla, se reintenta como pronto al cabo de un minuto.
  */
 
@@ -24,6 +31,10 @@ import { CONFIG } from '../config.js';
 import { pedirJson } from '../utilidades/red.js';
 import { prepararNucleo } from '../modulos/trayectos.js';
 import { HORARIO_LARGA_DISTANCIA, HORARIO_LARGA_DISTANCIA_SIMULADO } from '../modulos/horasParada.js';
+import { combinarHorarios, horarioDesdeOuigo, RED_LARGA_DISTANCIA } from '../modulos/estacion.js';
+
+/** Clave del horario de OUIGO (el mismo archivo que pinta sus trenes según horario) */
+const HORARIO_OUIGO = 'ouigo';
 
 /** Espera mínima (ms) antes de reintentar una descarga fallida */
 const REINTENTO_MS = 60000;
@@ -48,6 +59,8 @@ export class AlmacenHorariosCercanias {
     this.preparados = new WeakMap();
     /** Promesa con la lista de núcleos [{nucleo, archivo, caja}] */
     this._indice = null;
+    /** Red de larga distancia combinada y los horarios con los que se hizo */
+    this._redLd = null;
   }
 
   /** Lista de núcleos (data/horarios/cercanias/indice.json), una descarga */
@@ -70,18 +83,47 @@ export class AlmacenHorariosCercanias {
 
   /** Como cargar(), pero preparado para «Próximo tren» y el panel de estación */
   async cargarPreparado(slug) {
+    if (slug === RED_LARGA_DISTANCIA) {
+      await Promise.all([this.cargar(HORARIO_LARGA_DISTANCIA), this.cargar(HORARIO_OUIGO)]);
+      return this._redLargaDistancia();
+    }
     return this._preparar(await this.cargar(slug));
   }
 
   /** Como obtener(), pero preparado (undefined mientras se descarga) */
   obtenerPreparado(slug) {
+    if (slug === RED_LARGA_DISTANCIA) {
+      const ld = this.obtener(HORARIO_LARGA_DISTANCIA);
+      this.obtener(HORARIO_OUIGO); // si aún no está, se une cuando llegue
+      return ld === undefined && !this.listos.has(HORARIO_LARGA_DISTANCIA_SIMULADO) ? undefined : this._redLargaDistancia();
+    }
     const horario = this.obtener(slug);
     return horario ? this._preparar(horario) : horario;
+  }
+
+  /**
+   * Renfe AV/LD/MD + OUIGO (+ el simulado) en un solo horario preparado.
+   * Se rehace solo si cambia alguno (el simulado se monta de nuevo de vez
+   * en cuando; OUIGO puede llegar después que el de Renfe).
+   */
+  _redLargaDistancia() {
+    const partes = [
+      this.listos.get(HORARIO_LARGA_DISTANCIA),
+      this.listos.get(HORARIO_OUIGO),
+      this.listos.get(HORARIO_LARGA_DISTANCIA_SIMULADO),
+    ];
+    if (!partes[0] && !partes[2]) return null;
+    if (!this._redLd || this._redLd.partes.some((p, i) => p !== partes[i])) {
+      const ouigo = partes[1] ? horarioDesdeOuigo(partes[1]) : null;
+      this._redLd = { partes, horario: combinarHorarios([partes[0], ouigo, partes[2]]) };
+    }
+    return this._redLd.horario;
   }
 
   /** Dirección del archivo de un horario (null si no se descarga) */
   _url(slug) {
     if (slug === HORARIO_LARGA_DISTANCIA) return CONFIG.horariosLargaDistancia?.archivo ?? null;
+    if (slug === HORARIO_OUIGO) return CONFIG.fuentesHorario?.find((f) => f.id === HORARIO_OUIGO && f.activa !== false)?.ruta ?? null;
     if (slug === HORARIO_LARGA_DISTANCIA_SIMULADO) return null;
     return `${CONFIG.horariosCercanias.carpeta}${slug}.json`;
   }
@@ -90,6 +132,12 @@ export class AlmacenHorariosCercanias {
   registrar(slug, horario) {
     this.listos.set(slug, horario);
     this.promesas.delete(slug);
+  }
+
+  /** Quita un horario registrado (el simulado, al pasar a datos reales) */
+  olvidar(slug) {
+    if (this._url(slug)) return; // los descargados valen para los dos modos
+    this.listos.delete(slug);
   }
 
   /** Descarga (una vez) el horario de un núcleo; la promesa da null si falla */

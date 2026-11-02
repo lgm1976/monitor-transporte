@@ -246,10 +246,20 @@ export const CONFIG = {
     intervaloMs: 1000,
   },
 
-  /** Estaciones de Cercanías en el mapa: se ven a partir de este zoom y abren su panel */
+  /** Estaciones en el mapa (Cercanías y larga distancia): al tocarlas abren su panel */
   estacionesMapa: {
     activas: true,
+    /** Zoom desde el que se ven las estaciones de Cercanías */
     zoomMin: 13,
+    /**
+     * Estaciones de larga distancia (AV/LD/MD y OUIGO). `umbrales`:
+     * [zoom, viajes mínimos en los tres días del horario]; con poco zoom
+     * solo las que tienen más trenes. Sin `umbrales`, los de capaEstaciones.js.
+     */
+    largaDistancia: {
+      activas: true,
+      umbrales: [[6, 100], [8, 60], [9, 30], [10, 12], [11, 0]],
+    },
   },
 
   /**

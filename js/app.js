@@ -28,14 +28,14 @@ import { PanelFavoritos } from './modulos/panelFavoritos.js';
 import { PanelAvisos } from './modulos/panelAvisos.js';
 import { PanelInfo } from './modulos/panelInfo.js';
 import { indexarPorLinea, avisosDeTren } from './modulos/avisos.js';
-import { Favoritos } from './modulos/estacion.js';
+import { Favoritos, RED_LARGA_DISTANCIA } from './modulos/estacion.js';
 import { CapaEstaciones } from './modulos/capaEstaciones.js';
 import { slugNucleo } from './modulos/recorrido.js';
 import { FuenteMock } from './fuentes/fuenteMock.js';
 import { FuenteGtfsRt } from './fuentes/fuenteGtfsRt.js';
 import { AlmacenRecorridos } from './fuentes/almacenRecorridos.js';
 import { AlmacenHorariosCercanias } from './fuentes/almacenHorariosCercanias.js';
-import { horaEnParada } from './modulos/horasParada.js';
+import { horaEnParada, HORARIO_LARGA_DISTANCIA_SIMULADO } from './modulos/horasParada.js';
 import { FuenteAvisos } from './fuentes/fuenteAvisos.js';
 
 /** Estado global de la aplicación (único y explícito) */
@@ -246,8 +246,8 @@ function actualizarRecorrido() {
       app.mapa.mostrarRecorrido(datos, {
         clave,
         color: v.linea?.color || app.estilos?.theme?.accent || '#2563eb',
-        // Las paradas de Cercanías abren el panel de su estación
-        red: v.servicio === 'Cercanías' && v.nucleo ? slugNucleo(v.nucleo) : '',
+        // Las paradas abren el panel de su estación (su núcleo de Cercanías o larga distancia)
+        red: v.servicio === 'Cercanías' ? (v.nucleo ? slugNucleo(v.nucleo) : '') : RED_LARGA_DISTANCIA,
       });
     })
     .catch((error) => {
@@ -514,6 +514,8 @@ async function establecerModo(modo, { esArranque = false } = {}) {
 
   app.vehiculos = [];
   app.mapa.reiniciarEstimador();
+  // El horario simulado de larga distancia no debe salir en el panel de estación con datos reales
+  if (app.modo !== 'mock') AlmacenHorariosCercanias.compartido().olvidar(HORARIO_LARGA_DISTANCIA_SIMULADO);
   reiniciarAvisos();
   renderizar(); // limpia mapa y listado antes de la primera lectura del nuevo modo
   app.fallosSeguidos = 0;

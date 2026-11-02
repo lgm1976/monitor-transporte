@@ -11,9 +11,9 @@ Aplicación web estática que muestra en un mapa interactivo la posición y la p
 - **Horas de paso en larga distancia**: llegada y salida en cada parada, con la hora prevista si va con retraso
 - **Trenes OUIGO según horario** (OUIGO no publica datos en tiempo real)
 - **Próximo tren** entre dos estaciones de Cercanías, con cuenta atrás y retraso en vivo
-- **Panel de estación** (próximos trenes en los dos sentidos) y **favoritos** de estaciones y trayectos; las estaciones de Cercanías se ven en el mapa al acercarse
+- **Panel de estación** de Cercanías y de **larga distancia** (próximos trenes en los dos sentidos, con OUIGO según horario) y **favoritos** de estaciones y trayectos; las estaciones se ven en el mapa (las de larga distancia desde lejos, las de Cercanías al acercarse)
 - **Avisos de servicio** de Renfe Cercanías (incidencias, obras y accesibilidad) en su pestaña, en la ficha de cada tren y en el panel de estación
-- **Información y novedades**: botón de la cabecera con la descripción del proyecto y lo nuevo de cada versión (versión actual: **1.10**)
+- **Información y novedades**: botón de la cabecera con la descripción del proyecto y lo nuevo de cada versión (versión actual: **1.11**)
 - Colores y umbrales de retraso definidos en `data/estilo_mapa.json`
 
 ## Estructura
@@ -35,12 +35,12 @@ js/
     horasParada.js         Horas de paso de larga distancia por cada parada (puro, testeable)
     estimador.js           Dónde va cada tren en cada instante: horario o velocidad + corrección suave (puro, testeable)
     panelTrayecto.js       Pestaña «Próximo tren» del panel
-    estacion.js            Próximos trenes de una estación y favoritos (puro, testeable)
+    estacion.js            Próximos trenes de una estación (Cercanías o larga distancia) y favoritos (puro, testeable)
     panelEstacion.js       Pestaña «Estación» del panel
     panelFavoritos.js      Pestaña «Favoritos» (★) del panel
     avisos.js              Avisos de servicio: limpieza, categoría, cruce con líneas y estaciones (puro, testeable)
     panelAvisos.js         Pestaña «Avisos» (⚠) del panel
-    capaEstaciones.js      Estaciones de Cercanías en el mapa
+    capaEstaciones.js      Estaciones de Cercanías y de larga distancia en el mapa
     normalizador.js        GTFS-RT → modelo interno (puro, testeable)
     solapados.js           Un marcador por tren aunque el feed lo repita en varios viajes (puro, testeable)
     agrupacion.js          Grupos de trenes cercanos con el mapa alejado (puro, testeable)
@@ -55,7 +55,8 @@ js/
     fuenteAvisos.js        Avisos de servicio (feed de Renfe o simulados)
     almacenTrazados.js     Carga bajo demanda los trazados (común a todas las fuentes)
     almacenRecorridos.js   Vía y paradas del tren seguido (horarios, red de vías)
-    almacenHorariosCercanias.js  Horarios de Cercanías por núcleo y su índice, y el de larga distancia, una descarga compartida
+    almacenHorariosCercanias.js  Horarios de Cercanías por núcleo y su índice, el de larga distancia y la red de
+                           larga distancia del panel de estación (Renfe + OUIGO), una descarga compartida
   utilidades/
     red.js                 fetch con timeout, proxy CORS y protobuf
     geo.js                 Distancia, rumbo e interpolación (puro, testeable)
@@ -278,7 +279,7 @@ La URL refleja siempre el estado, así que también se pueden guardar vistas en 
 | `servicio` | `AVE` | Filtra por tipo de servicio |
 | `nucleo` | `Madrid` | Filtra por núcleo de Cercanías |
 | `red` + `desde` + `hasta` | `madrid`, `18002`, `70002` | Abre «Próximo tren» con ese trayecto |
-| `red` + `estacion` | `madrid`, `18000` | Abre «Estación» con esa estación |
+| `red` + `estacion` | `madrid`, `18000` | Abre «Estación» con esa estación (`red=ld` para larga distancia: `ld`, `04040`) |
 
 En el modo simulado los trenes C4 y R1 tienen núcleo (Madrid y Rodalies de Catalunya) para poder probar el filtro: en `data/diccionarios/mock.json` el grupo de la línea se escribe «Cercanías Madrid».
 
@@ -306,7 +307,7 @@ Cada mejora que se note al usar la web **sube la versión y añade su entrada** 
 
 Las correcciones internas, los cambios de datos (la Action nocturna) y las mejoras que no cambian lo que se ve no llevan versión.
 
-Historial reconstruido a partir de los commits: 1.0 a 1.3 el 01/11/2026 (primera versión, fichas legibles y movimiento continuo, filtros y seguir un tren, OUIGO y «Próximo tren»), 1.4 a 1.10 el 02/11/2026 (trenes por la vía y recorrido, movimiento fluido, panel de estación y favoritos, avisos, grupos de trenes e información, el ajuste del movimiento en hora punta y las horas de paso en larga distancia).
+Historial reconstruido a partir de los commits: 1.0 a 1.3 el 01/11/2026 (primera versión, fichas legibles y movimiento continuo, filtros y seguir un tren, OUIGO y «Próximo tren»), 1.4 a 1.11 el 02/11/2026 (trenes por la vía y recorrido, movimiento fluido, panel de estación y favoritos, avisos, grupos de trenes e información, el ajuste del movimiento en hora punta, las horas de paso en larga distancia y el panel de estación de larga distancia).
 
 ## Horas de paso en larga distancia
 
@@ -448,9 +449,30 @@ Se llega a una estación de tres maneras:
 - Tocar uno lo abre en su pestaña con todos sus trenes; la ✕ lo quita.
 - Se guardan en el navegador (`localStorage`, como mucho 20). No pasan de un dispositivo a otro; en navegación privada duran lo que la pestaña.
 
-El cálculo está en `js/modulos/estacion.js` (puro, con pruebas en `tests/estacion.test.mjs`); usa el mismo horario por núcleo que «Próximo tren», ahora descargado una sola vez para todo (`AlmacenHorariosCercanias.cargarPreparado`). Solo Cercanías por ahora; las horas de paso de larga distancia ya existen (`data/horarios/ld.json`), así que extenderlo es el siguiente paso natural (ver próximos pasos).
+El cálculo está en `js/modulos/estacion.js` (puro, con pruebas en `tests/estacion.test.mjs`); usa el mismo horario por núcleo que «Próximo tren», ahora descargado una sola vez para todo (`AlmacenHorariosCercanias.cargarPreparado`). Para larga distancia, ver la sección siguiente.
 
 Comprobado el 02/11/2026 en el navegador (modo simulado, escritorio y móvil): Atocha con sus nueve líneas y el filtro, favoritos de estación y de trayecto (Parla → Sol) con su resumen, que siguen al recargar, enlace `?red=madrid&estacion=18000` y una estación (Embajadores) abierta tocándola en el mapa.
+
+### Estaciones de larga distancia
+
+Desde la versión 1.11 (02/11/2026), el selector «Red» de la pestaña «Estación» tiene, además de los núcleos de Cercanías, **«Larga y media distancia»** (`?red=ld&estacion=04040`). Funciona como en Cercanías, con estas diferencias:
+
+- **Qué trenes salen**: AVE, Avlo, Avant, Alvia, Euromed, Intercity, Media Distancia, Regionales y Proximidad de Renfe (`data/horarios/ld.json`) y **OUIGO** (`data/horarios/ouigo.json`, «Según horario · sin datos en vivo», con «Ver en el mapa» a su marcador según horario). Unas 1.000 estaciones.
+- **Llegada y salida**: si el tren para dos minutos o más, la fila dice «llega 11:25» junto a la salida (con la prevista si va con retraso).
+- **Retraso en vivo** de los trenes de Renfe, cruzando el feed por su viaje o por cualquiera de sus viajes solapados (`vehiculosPorViaje`). «En la estación» en lugar de «en el andén»: el feed de larga distancia no da el andén.
+- **Un tren, una fila**: Renfe parte muchos trenes en viajes solapados (el AVE 03091 Madrid → Barcelona y Zaragoza → Barcelona) o en un viaje que termina y otro que sigue con el mismo número (el Intercity 00631 llega a Valladolid a las 08:32 como Salamanca → Valladolid y sale a las 08:34 como Salamanca → Zaragoza). Los viajes con el mismo número a menos de 20 minutos en la estación se unen: origen más lejano, destino más lejano, la llegada del que termina y la salida del que sigue. Trenes con números distintos a la misma hora (dos Alvia acoplados hacia Irun y Bilbao) salen por separado.
+- **Filtro por tipo de tren** en lugar de por línea, con un color por tipo (`COLORES_LARGA_DISTANCIA`; el GTFS de Renfe no los trae).
+- **Sin avisos**: Renfe no publica avisos de larga distancia.
+- **De una red a otra**: si la estación (o una a menos de 400 m) está también en la otra red, un botón lleva a sus trenes. De Cercanías a larga distancia, a la de más trenes entre la misma y las cercanas (de Atocha Cercanías, a Puerta de Atocha); de larga distancia a Cercanías, a la misma o la más cercana del núcleo.
+- **Favoritos**: se guardan igual («Estación · Larga y media distancia»). Si en las próximas horas solo llegan trenes (una estación de fin de línea de noche), el resumen dice cuáles llegan.
+
+**En el mapa** (`capaEstaciones.js`): puntos oscuros con borde blanco, encima de los de Cercanías. Con el mapa alejado solo las estaciones con más trenes; al acercarse, todas (`CONFIG.estacionesMapa.largaDistancia.umbrales`, viajes en los tres días del horario por zoom: 42 estaciones con zoom 6 y 7, 103 con 8, 254 con 9, 632 con 10 y las 1.000 desde 11). Una estación de las dos redes se pinta una vez («Larga distancia y Cercanías Madrid») y, desde el zoom de Cercanías (13), abre Cercanías. Las **paradas del recorrido** de un tren de larga distancia o un OUIGO seguido también abren su panel.
+
+**Datos.** `AlmacenHorariosCercanias.cargarPreparado('ld')` y `obtenerPreparado('ld')` devuelven la red combinada: el horario de Renfe unido al de OUIGO (`horarioDesdeOuigo` lo pasa al formato de un núcleo con el mismo `trip_id` que su fuente según horario) y, en el modo simulado, al horario simulado (`combinarHorarios`: une estaciones por código y tipos de tren por nombre y reindexa las fechas; 10 ms). Se rehace solo si cambia alguno; el estimador y el recorrido siguen usando el horario de Renfe tal cual (`obtener('ld')`). Al pasar a datos reales se olvida el simulado. Cada consulta de una estación tarda unos 2 ms.
+
+**Modo simulado.** Las estaciones del AVE Madrid → Barcelona y del MD Sevilla → Málaga simulados muestran ese tren «En vivo» (en Córdoba-Julio Anguita, el MD con 21 minutos de retraso y su hora de llegada), además de los trenes reales según horario. La fuente simulada pone desde la primera lectura la parada a la que va cada tren.
+
+Comprobado el 02/11/2026 en el navegador: en simulado, Madrid-Puerta de Atocha, Zaragoza Delicias y Córdoba (filtro por tipo de tren, OUIGO con «Ver en el mapa», el MD simulado en vivo), León abierto tocándolo en el mapa y guardado en favoritos, y la vista de móvil; con datos reales, Madrid-Chamartín con los trenes de Renfe en vivo (retrasos de 3 a 28 minutos), los OUIGO según horario y el botón a Cercanías Madrid. Sin errores.
 
 ## Avisos de servicio
 
@@ -752,7 +774,7 @@ Con la grabación de mediodía (15 minutos), de la fase 3 a la 4: en Cercanías,
 
 - Movimiento fluido, lo que queda: en Cercanías, pasar al modelo de velocidad los trenes cuyo viaje no casa con su horario (más de 10 minutos de adelanto). En larga distancia ya va con el horario (1.10); quedan los saltos que vienen de los datos de Renfe.
 - Arrancar centrado en la zona del usuario (con permiso de ubicación).
-- Panel de estación también para larga distancia (las horas de paso ya están en `data/horarios/ld.json`) y estaciones de larga distancia en el mapa.
+- Panel de estación de larga distancia: andén cuando Renfe lo publique; avisos si algún día hay feed de larga distancia.
 - Ofrecer el transbordo también cuando llega antes que el directo; dos transbordos; Media Distancia.
 - Paradas del recorrido con los trenes que pasarán por ellas a lo largo del día (evolución de la fase 3).
 - Avisos de servicio: marcar en el mapa las estaciones con avisos de accesibilidad, resumen de avisos en los favoritos y en «Próximo tren», y enlace con la pestaña en la URL. Revisar si Renfe vuelve a actualizar su feed de avisos (congelado desde el 07/10/2026).

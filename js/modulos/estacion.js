@@ -2,32 +2,165 @@
  * estacion.js
  * ---------------------------------------------------------------
  * Panel de estación: los próximos trenes que pasan por una estación de
- * Cercanías, en los dos sentidos, con la cuenta atrás y el retraso en
- * vivo de los que ya circulan. También el resumen de los favoritos
- * (estaciones y trayectos) y su guardado en el navegador.
+ * Cercanías o de larga distancia, en los dos sentidos, con la cuenta
+ * atrás y el retraso en vivo de los que ya circulan. También el resumen
+ * de los favoritos (estaciones y trayectos) y su guardado en el navegador.
  *
  * Datos: el mismo horario por núcleo que «Próximo tren»
  * (data/horarios/cercanias/<núcleo>.json, preparado con prepararNucleo).
+ * En larga distancia, data/horarios/ld.json (AV/LD/MD de Renfe, con
+ * llegada y salida en cada parada) unido al horario de OUIGO
+ * (data/horarios/ouigo.json, convertido con horarioDesdeOuigo) mediante
+ * combinarHorarios: un único «núcleo» con todos los trenes.
  *
  * Módulo puro (sin DOM): se prueba con node --test. El almacenamiento
  * de favoritos recibe el `localStorage` (o uno de prueba) desde fuera.
  */
 
 import { momentoMadrid, minutosAHora } from './horario.js';
-import { numeroDesdeTrip, proximosTrenes, proximosConTransbordo, textoFaltan } from './trayectos.js';
+import { numeroDesdeTrip, proximosTrenes, proximosConTransbordo, textoFaltan, prepararNucleo } from './trayectos.js';
 
 /** Margen para seguir mostrando un tren que está saliendo ahora mismo (min) */
 const MARGEN_SALIDA_MIN = 1;
 /** Hasta cuántas horas por delante se buscan trenes */
 const HORIZONTE_MIN = 6 * 60;
+/** Desde cuántos minutos de parada se enseñan llegada y salida por separado */
+const ESTANCIA_VISIBLE_MIN = 2;
+/** Viajes con el mismo número a menos de estos minutos en la estación: el mismo tren */
+const MISMO_TREN_MIN = 20;
 
 function diasEntre(desde, hasta) {
   return Math.round((Date.parse(`${hasta}T12:00:00Z`) - Date.parse(`${desde}T12:00:00Z`)) / 86400000);
 }
 
+/** Red de larga distancia en la pestaña «Estación», la URL y los favoritos */
+export const RED_LARGA_DISTANCIA = 'ld';
+export const NOMBRE_LARGA_DISTANCIA = 'Larga y media distancia';
+
+/**
+ * Colores de los tipos de tren de larga distancia, que en el GTFS de Renfe
+ * no traen color propio. Sin texto: blanco.
+ */
+export const COLORES_LARGA_DISTANCIA = {
+  AVE: '5B2C86',
+  'AVE Internacional': '5B2C86',
+  Avlo: 'A0307A',
+  Avant: '7C3AED',
+  'Avant Exprés': '7C3AED',
+  Alvia: '0E7490',
+  Euromed: '0369A1',
+  Intercity: '334155',
+  'Tren Celta': '0F766E',
+  'Media Distancia': 'B45309',
+  Regional: 'A16207',
+  'Regional Exprés': 'A16207',
+  Proximidad: '9A3412',
+  OUIGO: 'E5007D',
+};
+const COLOR_LD_POR_DEFECTO = '475569';
+
 function datosLinea(nucleo, iLinea) {
   const [nombre, color, colorTexto] = nucleo.lineas[iLinea];
-  return { nombre, color: `#${color}`, colorTexto: `#${colorTexto}` };
+  const fondo = color || COLORES_LARGA_DISTANCIA[nombre] || COLOR_LD_POR_DEFECTO;
+  return { nombre, color: `#${fondo}`, colorTexto: `#${colorTexto || 'FFFFFF'}` };
+}
+
+/**
+ * Número de tren a partir del trip_id, en los tres formatos:
+ *   Cercanías   3004D18779C3       → 18779
+ *   AV/LD/MD    0019012026-11-03   → 00190 (cinco cifras + variante + fecha)
+ *   OUIGO       6610-2026-11-02    → 6610 (el que monta horarioDesdeOuigo)
+ */
+export function numeroTren(tripId) {
+  const cercanias = numeroDesdeTrip(tripId);
+  if (cercanias) return cercanias;
+  const ld = /^(\d{5})\d\d{4}-\d\d-\d\d$/.exec(String(tripId));
+  if (ld) return ld[1];
+  const ouigo = /^(\d{3,6})-\d{4}-\d\d-\d\d$/.exec(String(tripId));
+  return ouigo ? ouigo[1] : null;
+}
+
+/**
+ * Convierte el horario de OUIGO (data/horarios/ouigo.json: viajes con
+ * `p: [[estación, llegada, salida]]`) al formato de un núcleo, para
+ * juntarlo con el de Renfe. El trip_id es el mismo que usa la fuente de
+ * OUIGO según horario («número-fecha»), así «Ver en el mapa» lo encuentra.
+ */
+export function horarioDesdeOuigo(datos) {
+  const fechas = [...new Set(datos.viajes.map((v) => v.f))].sort();
+  const iFecha = new Map(fechas.map((f, i) => [f, i]));
+  const patrones = [];
+  const iPatron = new Map();
+  const viajes = [];
+  for (const v of datos.viajes) {
+    if (!v.p?.length || v.p.length < 2) continue;
+    const clave = v.p.map((x) => x[0]).join(',');
+    if (!iPatron.has(clave)) {
+      iPatron.set(clave, patrones.length);
+      patrones.push(v.p.map((x) => x[0]));
+    }
+    const ultima = v.p.length - 1;
+    // Minutos de salida de cada parada; en el destino, la llegada
+    const salidas = v.p.map((x, k) => (k === ultima ? x[1] : x[2]));
+    viajes.push([
+      `${v.n}-${v.f}`, iFecha.get(v.f), 0, iPatron.get(clave), salidas[0],
+      salidas.slice(1).map((m, k) => m - salidas[k]),
+      v.p.map((x, k) => (k === ultima ? 0 : Math.max(0, x[2] - x[1]))),
+    ]);
+  }
+  return {
+    nucleo: datos.operador || 'OUIGO',
+    fechas,
+    lineas: [[datos.operador || 'OUIGO', String(datos.color || '').replace('#', ''), String(datos.colorTexto || '').replace('#', '')]],
+    estaciones: datos.estaciones.map(([id, nombre, lat, lon]) => [String(id), nombre, lat, lon]),
+    patrones,
+    viajes,
+  };
+}
+
+/**
+ * Junta varios horarios con el formato de un núcleo (larga distancia de
+ * Renfe, OUIGO, el simulado…) en uno solo, ya preparado (prepararNucleo):
+ * las estaciones con el mismo código se unen (la primera da el nombre), las
+ * líneas con el mismo nombre también y las fechas se reindexan. Añade
+ * `viajesPorEstacion` (cuántos viajes paran en cada una, para decidir qué
+ * estaciones se ven en el mapa con poco zoom).
+ */
+export function combinarHorarios(horarios, nombre = NOMBRE_LARGA_DISTANCIA) {
+  const lista = horarios.filter((h) => h?.viajes);
+  const fechas = [...new Set(lista.flatMap((h) => h.fechas))].sort();
+  const iFecha = new Map(fechas.map((f, i) => [f, i]));
+  const estaciones = [];
+  const iEstacion = new Map();
+  const lineas = [];
+  const iLinea = new Map();
+  const patrones = [];
+  const viajes = [];
+  for (const h of lista) {
+    const mapaEst = h.estaciones.map(([id, nom, lat, lon]) => {
+      const clave = String(id);
+      if (!iEstacion.has(clave)) {
+        iEstacion.set(clave, estaciones.length);
+        estaciones.push([clave, nom, lat ?? null, lon ?? null]);
+      }
+      return iEstacion.get(clave);
+    });
+    const mapaLin = h.lineas.map((l) => {
+      if (!iLinea.has(l[0])) {
+        iLinea.set(l[0], lineas.length);
+        lineas.push([l[0], l[1] ?? '', l[2] ?? '']);
+      }
+      return iLinea.get(l[0]);
+    });
+    const basePatron = patrones.length;
+    for (const p of h.patrones) patrones.push(p.map((e) => mapaEst[e]));
+    for (const [tripId, f, l, p, salida, tramos, estancias] of h.viajes) {
+      viajes.push([tripId, iFecha.get(h.fechas[f]), mapaLin[l], basePatron + p, salida, tramos, estancias]);
+    }
+  }
+  const viajesPorEstacion = new Array(estaciones.length).fill(0);
+  for (const v of viajes) for (const e of new Set(patrones[v[3]])) viajesPorEstacion[e]++;
+  return { ...prepararNucleo({ nucleo: nombre, fechas, lineas, estaciones, patrones, viajes }), largaDistancia: true, viajesPorEstacion };
 }
 
 /** Coordenadas y nombre de una estación del núcleo ({id, nombre, lat, lon}) o null */
@@ -85,7 +218,7 @@ export function trenesEnEstacion(nucleo, estacionId, ahoraMs, enVivo = new Map()
   const nombreEst = (i) => nucleo.estaciones[i][1];
   const resultado = [];
 
-  for (const [tripId, iFecha, iLinea, iPatron, salida, tramos] of nucleo.viajes) {
+  for (const [tripId, iFecha, iLinea, iPatron, salida, tramos, estancias] of nucleo.viajes) {
     const pos = nucleo.posicionesPatron[iPatron];
     const ie = pos.get(e);
     if (ie === undefined) continue;
@@ -95,7 +228,10 @@ export function trenesEnEstacion(nucleo, estacionId, ahoraMs, enVivo = new Map()
     for (let k = 0; k < ie; k++) tPaso += tramos[k];
     if (tPaso < ahora - 180 || tPaso > ahora + HORIZONTE_MIN) continue;
 
-    const vivo = enVivo.get(tripId);
+    // Los trenes según horario (OUIGO) no traen retraso ni posición real:
+    // del vehículo solo se usa su id para «Ver en el mapa»
+    const vehiculo = enVivo.get(tripId);
+    const vivo = vehiculo && !vehiculo.segunHorario ? vehiculo : null;
     let retrasoMin = 0;
     let enAnden = false;
     if (vivo) {
@@ -111,9 +247,11 @@ export function trenesEnEstacion(nucleo, estacionId, ahoraMs, enVivo = new Map()
     const patron = nucleo.patrones[iPatron];
     const termina = ie === patron.length - 1;
     const enEstaEstacion = vivo && String(vivo.paradaId) === String(estacionId);
+    // Larga distancia: minutos parado en la estación (llega antes de salir)
+    const estancia = !termina && ie > 0 ? estancias?.[ie] ?? 0 : 0;
     resultado.push({
       tripId,
-      numeroTren: numeroDesdeTrip(tripId),
+      numeroTren: numeroTren(tripId),
       linea: datosLinea(nucleo, iLinea),
       haciaNombre: nombreEst(patron[patron.length - 1]),
       desdeNombre: nombreEst(patron[0]),
@@ -121,17 +259,110 @@ export function trenesEnEstacion(nucleo, estacionId, ahoraMs, enVivo = new Map()
       termina,
       hora: minutosAHora(tPaso),
       horaPrevista: minutosAHora(pasoPrevisto),
+      llegada: estancia >= ESTANCIA_VISIBLE_MIN ? minutosAHora(tPaso - estancia) : null,
+      llegadaPrevista: estancia >= ESTANCIA_VISIBLE_MIN ? minutosAHora(pasoPrevisto - estancia) : null,
       faltanMin: enAnden ? 0 : Math.max(0, Math.round(pasoPrevisto - ahora)),
       enAnden,
       retrasoMin,
       enVivo: Boolean(vivo),
+      segunHorario: Boolean(vehiculo?.segunHorario) || nucleo.lineas[iLinea][0] === 'OUIGO',
       cancelado: Boolean(vivo?.cancelado),
-      idVehiculo: vivo?.id ?? null,
+      idVehiculo: vehiculo?.id ?? null,
       anden: enEstaEstacion ? vivo.anden ?? null : null,
       orden: enAnden ? ahora - 1 : pasoPrevisto,
+      tPaso,
+      paradasAntes: ie,
+      paradasDespues: patron.length - 1 - ie,
     });
   }
-  return resultado.sort((a, b) => a.orden - b.orden).slice(0, cuantos);
+  return unirMismoTren(resultado)
+    .sort((a, b) => a.orden - b.orden)
+    .slice(0, cuantos)
+    .map(({ tPaso, paradasAntes, paradasDespues, ...t }) => t);
+}
+
+/**
+ * Renfe parte muchos trenes de larga distancia en varios viajes solapados
+ * (el AVE 09725 sale como Madrid → Marsella, Madrid → Barcelona y
+ * Figueres → Marsella), y algunos trenes tienen dos variantes del mismo
+ * viaje. En la estación son el mismo tren a la misma hora: se deja uno,
+ * con el origen más lejano por detrás y el destino más lejano por delante.
+ * Solo «termina aquí» si terminan todos, y «sale de aquí» si salen todos.
+ */
+function unirMismoTren(trenes) {
+  const porNumero = new Map();
+  const sueltos = [];
+  for (const t of trenes) {
+    if (!t.numeroTren) sueltos.push(t);
+    else if (porNumero.has(t.numeroTren)) porNumero.get(t.numeroTren).push(t);
+    else porNumero.set(t.numeroTren, [t]);
+  }
+  const unidos = [];
+  for (const lista of porNumero.values()) {
+    lista.sort((a, b) => a.tPaso - b.tPaso);
+    let grupo = [lista[0]];
+    for (const t of lista.slice(1)) {
+      // A la vez o casi: el viaje que termina aquí llega unos minutos
+      // antes de que salga el que sigue (Intercity 00631 en Valladolid)
+      if (t.tPaso - grupo[grupo.length - 1].tPaso <= MISMO_TREN_MIN) grupo.push(t);
+      else {
+        unidos.push(unirGrupo(grupo));
+        grupo = [t];
+      }
+    }
+    unidos.push(unirGrupo(grupo));
+  }
+  return [...unidos, ...sueltos];
+}
+
+/** Un tren a partir de sus viajes en la estación (ver unirMismoTren) */
+function unirGrupo(grupo) {
+  if (grupo.length === 1) return grupo[0];
+  // Manda el que va en vivo (retraso, andén, vehículo) y, si no, el que sigue viaje
+  const base = { ...(grupo.find((t) => t.enVivo) ?? grupo.find((t) => !t.termina) ?? grupo[0]) };
+  for (const t of grupo) {
+    if (t.paradasDespues > base.paradasDespues) {
+      base.haciaNombre = t.haciaNombre;
+      base.paradasDespues = t.paradasDespues;
+    }
+    if (t.paradasAntes > base.paradasAntes) {
+      base.desdeNombre = t.desdeNombre;
+      base.paradasAntes = t.paradasAntes;
+    }
+    base.idVehiculo ??= t.idVehiculo;
+  }
+  base.termina = grupo.every((t) => t.termina);
+  base.empieza = grupo.every((t) => t.empieza);
+  if (!base.termina && !base.llegada) {
+    // Llegada del viaje que termina aquí, si llega antes de que salga este
+    const llega = grupo.find((t) => t.llegada) ?? grupo.find((t) => t.termina && t.tPaso < base.tPaso);
+    if (llega) {
+      const desfase = base.retrasoMin - llega.retrasoMin;
+      base.llegada = llega.llegada ?? llega.hora;
+      base.llegadaPrevista = llega.llegada ? llega.llegadaPrevista : minutosAHora(llega.tPaso + llega.retrasoMin + Math.max(0, desfase));
+    }
+  }
+  return base;
+}
+
+/**
+ * Trenes del feed por trip_id, para cruzarlos con el horario. En larga
+ * distancia un tren lleva también sus viajes solapados (solapados.js):
+ * cualquiera de ellos lo encuentra. Los trenes según horario (OUIGO)
+ * entran también, solo para «Ver en el mapa».
+ */
+export function vehiculosPorViaje(vehiculos) {
+  const mapa = new Map();
+  for (const v of vehiculos) {
+    if (!v.tripId) continue;
+    for (const t of [v.tripId, ...(v.viajesSolapados ?? [])]) if (!mapa.has(t)) mapa.set(t, v);
+  }
+  return mapa;
+}
+
+/** «en el andén» en Cercanías; en larga distancia, donde no se sabe el andén, «en la estación» */
+export function textoEnEstacion(nucleo) {
+  return nucleo?.largaDistancia ? 'en la estación' : 'en el andén';
 }
 
 /* ---------- Favoritos ---------- */
@@ -218,10 +449,16 @@ export class Favoritos {
 export function resumenFavorito(f, nucleo, ahoraMs, enVivo = new Map()) {
   if (!nucleo) return null;
   if (f.tipo === 'estacion') {
-    const trenes = trenesEnEstacion(nucleo, f.estacion, ahoraMs, enVivo, { cuantos: 2 }).filter((t) => !t.cancelado && !t.termina);
+    // Los dos próximos que salen; si no sale ninguno (fin de línea de noche), los que llegan
+    const todos = trenesEnEstacion(nucleo, f.estacion, ahoraMs, enVivo, { cuantos: 12 }).filter((t) => !t.cancelado);
+    const salen = todos.filter((t) => !t.termina).slice(0, 2);
+    const trenes = salen.length ? salen : todos.slice(0, 2);
     if (!trenes.length) return { texto: 'Sin trenes en las próximas horas', trenes };
+    const cuando = (t) => (t.enAnden ? textoEnEstacion(nucleo) : textoFaltan(t.faltanMin));
     return {
-      texto: trenes.map((t) => `${t.linea.nombre} hacia ${t.haciaNombre} ${t.enAnden ? 'en el andén' : textoFaltan(t.faltanMin)}`).join(' · '),
+      texto: trenes.map((t) => (t.termina
+        ? `${t.linea.nombre} desde ${t.desdeNombre} llega ${cuando(t)}`
+        : `${t.linea.nombre} hacia ${t.haciaNombre} ${cuando(t)}`)).join(' · '),
       trenes,
     };
   }
