@@ -1,11 +1,11 @@
 {
- "generado": "2026-11-02T13:07:59+01:00",
+ "generado": "2026-11-03T12:17:20+01:00",
  "nucleos": [
   {
    "nucleo": "Asturias",
    "archivo": "asturias.json",
    "estaciones": 148,
-   "viajes": 779,
+   "viajes": 948,
    "caja": [
     43.0716,
     -6.1519,
@@ -18,7 +18,7 @@
    "nucleo": "Bilbao",
    "archivo": "bilbao.json",
    "estaciones": 112,
-   "viajes": 720,
+   "viajes": 723,
    "caja": [
     42.6161,
     -5.5661,
@@ -31,7 +31,7 @@
    "nucleo": "Cádiz",
    "archivo": "cadiz.json",
    "estaciones": 30,
-   "viajes": 216,
+   "viajes": 293,
    "caja": [
     36.4088,
     -6.288,
@@ -70,7 +70,7 @@
    "nucleo": "León",
    "archivo": "leon.json",
    "estaciones": 44,
-   "viajes": 109,
+   "viajes": 122,
    "caja": [
     42.6025,
     -5.5749,
@@ -83,7 +83,7 @@
    "nucleo": "Madrid",
    "archivo": "madrid.json",
    "estaciones": 93,
-   "viajes": 2320,
+   "viajes": 2595,
    "caja": [
     40.035,
     -4.2691,
@@ -96,7 +96,7 @@
    "nucleo": "Málaga",
    "archivo": "malaga.json",
    "estaciones": 23,
-   "viajes": 246,
+   "viajes": 267,
    "caja": [
     36.5419,
     -4.7118,
@@ -109,7 +109,7 @@
    "nucleo": "Murcia/Alicante",
    "archivo": "murcia-alicante.json",
    "estaciones": 23,
-   "viajes": 204,
+   "viajes": 205,
    "caja": [
     37.3925,
     -1.7796,
@@ -122,7 +122,7 @@
    "nucleo": "Rodalies de Catalunya",
    "archivo": "rodalies-de-catalunya.json",
    "estaciones": 210,
-   "viajes": 2954,
+   "viajes": 2975,
    "caja": [
     40.5959,
     -0.8222,
@@ -148,7 +148,7 @@
    "nucleo": "Santander",
    "archivo": "santander.json",
    "estaciones": 77,
-   "viajes": 452,
+   "viajes": 453,
    "caja": [
     42.9945,
     -4.5143,
@@ -161,7 +161,7 @@
    "nucleo": "Sevilla",
    "archivo": "sevilla.json",
    "estaciones": 33,
-   "viajes": 269,
+   "viajes": 326,
    "caja": [
     36.9116,
     -6.2082,
@@ -187,7 +187,7 @@
    "nucleo": "Zaragoza",
    "archivo": "zaragoza.json",
    "estaciones": 6,
-   "viajes": 146,
+   "viajes": 159,
    "caja": [
     41.6334,
     -1.0202,
