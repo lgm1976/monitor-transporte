@@ -143,18 +143,21 @@ export function proximosTrenes(nucleo, origenId, destinoId, ahoraMs, enVivo = ne
       cancelado: Boolean(vivo?.cancelado),
       idVehiculo: vivo?.id ?? null,
       orden: salePrevista,
+      _llega: tDestino + retrasoMin,
     });
   }
 
   return resultado.sort((a, b) => a.orden - b.orden).slice(0, cuantos);
 }
 
-/* ---------- Trayectos con un transbordo ---------- */
+/* ---------- Trayectos con transbordos (uno o dos) ---------- */
 
 /** Minutos mínimos para cambiar de tren en la misma estación */
 export const TRANSBORDO_MIN = 4;
 /** Espera máxima razonable en la estación de transbordo */
 const ESPERA_MAX_MIN = 60;
+/** Transbordos máximos que se buscan (tres trenes como mucho) */
+export const MAX_TRANSBORDOS = 2;
 
 /** Datos de línea en el formato de la interfaz */
 function datosLinea(nucleo, iLinea) {
@@ -176,123 +179,175 @@ function retrasoDe(vivo) {
 }
 
 /**
- * Próximos trayectos con UN transbordo, para cuando ningún tren va
- * directo. Para cada tren que sale del origen se prueba a bajarse en
- * cada estación posterior de su recorrido y coger allí, con al menos
- * TRANSBORDO_MIN minutos de margen, el tren que antes llegue al destino.
- * Se queda la mejor combinación de cada primer tren y se descartan las
- * que salen antes pero llegan igual o más tarde que otra.
- *
- * @returns {object[]} [{tramo1, transbordo, tramo2, llega, duracionMin, faltanMin, ...}]
+ * Trenes que salen de cada estación en la ventana de búsqueda, ordenados
+ * por hora de salida (con su retraso en vivo). Los cancelados no salen, y
+ * un tren que ya ha dejado atrás una estación no se puede coger en ella.
+ * @returns {Map<number, object[]>} índice de estación → salidas
  */
-export function proximosConTransbordo(nucleo, origenId, destinoId, ahoraMs, enVivo = new Map(), cuantos = 4) {
+function indiceSalidas(nucleo, ahora, enVivo, desfaseFecha) {
+  const desde = ahora - 180;
+  const hasta = ahora + HORIZONTE_MIN + ESPERA_MAX_MIN * MAX_TRANSBORDOS;
+  const salidas = new Map();
+
+  for (const viaje of nucleo.viajes) {
+    const [tripId, , iLinea, iPatron] = viaje;
+    const vivo = enVivo.get(tripId);
+    if (vivo?.cancelado) continue;
+
+    const patron = nucleo.patrones[iPatron];
+    const pos = nucleo.posicionesPatron[iPatron];
+    const iParada = vivo ? nucleo.idEstacion.get(String(vivo.paradaId)) : undefined;
+    const posActual = iParada === undefined ? undefined : pos.get(iParada);
+    const retraso = retrasoDe(vivo);
+    const horas = horasDelViaje(viaje, desfaseFecha);
+
+    for (let k = 0; k < patron.length - 1; k++) {
+      if (posActual !== undefined && posActual > k) continue;
+      const sale = horas[k] + retraso;
+      if (sale < desde || sale > hasta) continue;
+      const lista = salidas.get(patron[k]) || [];
+      lista.push({ tripId, iLinea, iPatron, patron, horas, retraso, vivo, k, sale });
+      salidas.set(patron[k], lista);
+    }
+  }
+  for (const lista of salidas.values()) lista.sort((a, b) => a.sale - b.sale);
+  return salidas;
+}
+
+/**
+ * Mejor recorrido que empieza con el tren `primero` y llega a `d` con como
+ * mucho `tramosMax` trenes. Gana la llegada más temprana; a igualdad, menos
+ * trenes y menos espera. Búsqueda en profundidad con poda: una llegada a una
+ * estación con los mismos trenes usados que otra anterior ya no se explora.
+ *
+ * @returns {{llegada:number, tramos:object[], esperas:number[], total:number}|null}
+ */
+function mejorRecorrido(primero, d, salidas, tramosMax) {
+  const camino = [];
+  const explorado = new Map();
+  let mejor = null;
+
+  const registrar = (llegada, estacionFinal) => {
+    if (camino.length < 2) return; // directo: lo cubre proximosTrenes
+    const tramos = camino.map((e) => ({ ...e }));
+    const ultimo = tramos[tramos.length - 1];
+    ultimo.bajaEn = estacionFinal;
+    ultimo.llegadaBaja = llegada;
+    const esperas = tramos.slice(0, -1).map((e, i) => Math.round(tramos[i + 1].r.sale - e.llegadaBaja));
+    const total = esperas.reduce((s, x) => s + x, 0);
+    const mejora = !mejor
+      || llegada < mejor.llegada
+      || (llegada === mejor.llegada && (tramos.length < mejor.tramos.length
+        || (tramos.length === mejor.tramos.length && total < mejor.total)));
+    if (mejora) mejor = { llegada, tramos, esperas, total };
+  };
+
+  const explorar = (r) => {
+    const entrada = { r, bajaEn: null, llegadaBaja: null };
+    camino.push(entrada);
+    for (let k2 = r.k + 1; k2 < r.patron.length; k2++) {
+      const t = r.patron[k2];
+      const llegada = r.horas[k2] + r.retraso;
+      if (t === d) {
+        registrar(llegada, t);
+        break; // no hace falta seguir el tren más allá del destino
+      }
+      if (camino.length >= tramosMax) continue;
+      const clave = `${t}|${camino.length}`;
+      const previa = explorado.get(clave);
+      if (previa !== undefined && previa <= llegada) continue;
+      explorado.set(clave, llegada);
+
+      entrada.bajaEn = t;
+      entrada.llegadaBaja = llegada;
+      for (const c of salidas.get(t) ?? []) {
+        if (c.sale < llegada + TRANSBORDO_MIN) continue;
+        if (c.sale > llegada + ESPERA_MAX_MIN) break;
+        if (camino.some((x) => x.r.tripId === c.tripId)) continue;
+        explorar(c);
+      }
+    }
+    camino.pop();
+  };
+
+  explorar(primero);
+  return mejor;
+}
+
+/** Opción del panel a partir de un recorrido encontrado */
+function opcionDeRecorrido(nucleo, recorrido, ahora) {
+  const tramos = recorrido.tramos.map((e) => {
+    const { r } = e;
+    return {
+      tripId: r.tripId,
+      numeroTren: numeroDesdeTrip(r.tripId),
+      linea: datosLinea(nucleo, r.iLinea),
+      haciaNombre: nucleo.estaciones[r.patron[r.patron.length - 1]][1],
+      sale: minutosAHora(r.sale - r.retraso),
+      salePrevista: minutosAHora(r.sale),
+      llega: minutosAHora(e.llegadaBaja),
+      retrasoMin: r.retraso,
+      enVivo: Boolean(r.vivo),
+      idVehiculo: r.vivo?.id ?? null,
+      bajaEn: nucleo.estaciones[e.bajaEn][1],
+    };
+  });
+  const primero = recorrido.tramos[0].r;
+  const transbordos = tramos.slice(0, -1).map((t, i) => ({ estacion: t.bajaEn, esperaMin: recorrido.esperas[i] }));
+  const opcion = {
+    tipo: 'transbordo',
+    numTransbordos: transbordos.length,
+    tramos,
+    transbordos,
+    llega: minutosAHora(recorrido.llegada),
+    duracionMin: Math.round(recorrido.llegada - primero.sale),
+    faltanMin: Math.max(0, Math.round(primero.sale - ahora)),
+    _sale: primero.sale,
+    _llega: recorrido.llegada,
+  };
+  // Con un solo transbordo, los campos de siempre (tramo1, tramo2, transbordo)
+  if (tramos.length === 2) {
+    opcion.tramo1 = tramos[0];
+    opcion.tramo2 = tramos[1];
+    opcion.transbordo = transbordos[0];
+  }
+  return opcion;
+}
+
+/**
+ * Próximos trayectos con transbordos, para cuando hace falta cambiar de tren
+ * (o para ver si un trayecto con cambios llega antes que el directo).
+ *
+ * Para cada tren que sale del origen se busca la forma más rápida de llegar al
+ * destino con hasta `maxTransbordos` cambios (1 o 2), dejando al menos
+ * TRANSBORDO_MIN minutos en cada cambio y como mucho ESPERA_MAX_MIN de espera.
+ * Después se descartan las opciones que salen antes pero llegan igual o más
+ * tarde que otra que sale después.
+ *
+ * @param {object} nucleo resultado de prepararNucleo()
+ * @param {object} [opciones]
+ * @param {number} [opciones.maxTransbordos=1] 1 o 2 (MAX_TRANSBORDOS)
+ * @param {number} [opciones.cuantos=4]
+ * @returns {object[]} ordenadas por hora de salida. Cada una: {tramos, transbordos, llega, duracionMin, faltanMin, numTransbordos, _llega}; con un solo transbordo, también tramo1, tramo2 y transbordo
+ */
+export function proximosCombinados(nucleo, origenId, destinoId, ahoraMs, enVivo = new Map(), { maxTransbordos = 1, cuantos = 4 } = {}) {
   const o = nucleo.idEstacion.get(String(origenId));
   const d = nucleo.idEstacion.get(String(destinoId));
   if (o === undefined || d === undefined || o === d) return [];
 
   const { fecha, minutos: ahora } = momentoMadrid(ahoraMs);
   const desfaseFecha = nucleo.fechas.map((f) => diasEntre(fecha, f) * 1440);
-  const nombreEst = (i) => nucleo.estaciones[i][1];
-  const destinoDe = (iPatron) => { const p = nucleo.patrones[iPatron]; return nombreEst(p[p.length - 1]); };
+  const tramosMax = Math.min(Math.max(maxTransbordos, 0), MAX_TRANSBORDOS) + 1;
+  const salidas = indiceSalidas(nucleo, ahora, enVivo, desfaseFecha);
 
-  // 1) Segundos tramos: para cada estación, los trenes que salen de ella y
-  //    llegan después al destino → [{sale, llega, viaje, retraso}], por hora de salida
-  const haciaDestino = new Map();
-  for (const viaje of nucleo.viajes) {
-    const pos = nucleo.posicionesPatron[viaje[3]];
-    const id = pos.get(d);
-    if (id === undefined || id === 0) continue;
-    const horas = horasDelViaje(viaje, desfaseFecha);
-    if (horas[id] < ahora || horas[0] > ahora + HORIZONTE_MIN + ESPERA_MAX_MIN) continue;
-    const retraso = retrasoDe(enVivo.get(viaje[0]));
-    const patron = nucleo.patrones[viaje[3]];
-    for (let k = 0; k < id; k++) {
-      const lista = haciaDestino.get(patron[k]) || [];
-      lista.push({ sale: horas[k] + retraso, saleProg: horas[k], llega: horas[id] + retraso, viaje, retraso });
-      haciaDestino.set(patron[k], lista);
-    }
-  }
-  for (const lista of haciaDestino.values()) lista.sort((a, b) => a.sale - b.sale);
-
-  // 2) Primeros tramos: trenes que salen del origen; se busca el mejor transbordo
   const opciones = [];
-  for (const viaje of nucleo.viajes) {
-    const [tripId, , iLinea, iPatron] = viaje;
-    const pos = nucleo.posicionesPatron[iPatron];
-    const io = pos.get(o);
-    if (io === undefined) continue;
-    const horas = horasDelViaje(viaje, desfaseFecha);
-    if (horas[io] < ahora - 180 || horas[io] > ahora + HORIZONTE_MIN) continue;
-
-    const vivo = enVivo.get(tripId);
-    if (vivo?.cancelado) continue;
-    if (vivo) {
-      const iParada = nucleo.idEstacion.get(String(vivo.paradaId));
-      const posActual = iParada === undefined ? undefined : pos.get(iParada);
-      if (posActual !== undefined && posActual > io) continue; // ya pasó por el origen
-    }
-    const retraso1 = retrasoDe(vivo);
-    const sale1 = horas[io] + retraso1;
-    if (sale1 < ahora - MARGEN_SALIDA_MIN) continue;
-
-    const patron = nucleo.patrones[iPatron];
-    let mejor = null;
-    for (let k = io + 1; k < patron.length; k++) {
-      const estT = patron[k];
-      if (estT === d) break; // llegaría directo: no es un transbordo
-      const llegaT = horas[k] + retraso1;
-      const candidatos = haciaDestino.get(estT);
-      if (!candidatos) continue;
-      for (const c of candidatos) {
-        if (c.sale < llegaT + TRANSBORDO_MIN) continue;
-        if (c.sale > llegaT + ESPERA_MAX_MIN) break;
-        if (c.viaje === viaje || enVivo.get(c.viaje[0])?.cancelado) continue;
-        // Mejor: llega antes; a igualdad, el que menos espera (transbordo más corto)
-        if (!mejor || c.llega < mejor.c.llega || (c.llega === mejor.c.llega && c.sale - llegaT < mejor.espera)) {
-          mejor = { k, estT, llegaT, c, espera: c.sale - llegaT };
-        }
-      }
-    }
-    if (!mejor) continue;
-
-    const { c } = mejor;
-    const vivo2 = enVivo.get(c.viaje[0]);
-    opciones.push({
-      tipo: 'transbordo',
-      tramo1: {
-        tripId,
-        numeroTren: numeroDesdeTrip(tripId),
-        linea: datosLinea(nucleo, iLinea),
-        haciaNombre: nombreEst(patron[patron.length - 1]),
-        sale: minutosAHora(horas[io]),
-        salePrevista: minutosAHora(sale1),
-        llega: minutosAHora(mejor.llegaT),
-        retrasoMin: retraso1,
-        enVivo: Boolean(vivo),
-        idVehiculo: vivo?.id ?? null,
-      },
-      transbordo: { estacion: nombreEst(mejor.estT), esperaMin: Math.round(mejor.espera) },
-      tramo2: {
-        tripId: c.viaje[0],
-        numeroTren: numeroDesdeTrip(c.viaje[0]),
-        linea: datosLinea(nucleo, c.viaje[2]),
-        haciaNombre: destinoDe(c.viaje[3]),
-        sale: minutosAHora(c.saleProg),
-        salePrevista: minutosAHora(c.sale),
-        llega: minutosAHora(c.llega),
-        retrasoMin: c.retraso,
-        enVivo: Boolean(vivo2),
-        idVehiculo: vivo2?.id ?? null,
-      },
-      llega: minutosAHora(c.llega),
-      duracionMin: Math.round(c.llega - sale1),
-      faltanMin: Math.max(0, Math.round(sale1 - ahora)),
-      _sale: sale1,
-      _llega: c.llega,
-    });
+  for (const primero of salidas.get(o) ?? []) {
+    if (primero.sale < ahora - MARGEN_SALIDA_MIN || primero.sale > ahora + HORIZONTE_MIN) continue;
+    const recorrido = mejorRecorrido(primero, d, salidas, tramosMax);
+    if (recorrido) opciones.push(opcionDeRecorrido(nucleo, recorrido, ahora));
   }
 
-  // 3) Fuera las dominadas: si otra sale después y llega antes o a la vez, gana esa
+  // Fuera las dominadas: si otra sale después y llega antes o a la vez, gana esa
   opciones.sort((a, b) => b._sale - a._sale || a._llega - b._llega);
   const utiles = [];
   let mejorLlegada = Infinity;
@@ -303,6 +358,27 @@ export function proximosConTransbordo(nucleo, origenId, destinoId, ahoraMs, enVi
     }
   }
   return utiles.reverse().slice(0, cuantos);
+}
+
+/**
+ * Trayectos con un solo transbordo (versión de siempre, para los favoritos).
+ */
+export function proximosConTransbordo(nucleo, origenId, destinoId, ahoraMs, enVivo = new Map(), cuantos = 4) {
+  return proximosCombinados(nucleo, origenId, destinoId, ahoraMs, enVivo, { maxTransbordos: 1, cuantos });
+}
+
+/**
+ * De las combinaciones con transbordo, las que llegan antes que el primer
+ * tren directo que se muestra (las que no tienen dato de llegada, no entran).
+ * Si no hay ningún directo circulando o programado, devuelve todas.
+ * @param {object[]} directos resultado de proximosTrenes()
+ * @param {object[]} combinaciones resultado de proximosCombinados()
+ */
+export function combinacionesMasRapidas(directos, combinaciones) {
+  const vivos = directos.filter((t) => !t.cancelado && Number.isFinite(t._llega));
+  if (vivos.length === 0) return combinaciones;
+  const llegadaDirecta = Math.min(...vivos.map((t) => t._llega));
+  return combinaciones.filter((x) => x._llega < llegadaDirecta);
 }
 
 /** 14 → «14 min»; 124 → «2 h 4 min» */

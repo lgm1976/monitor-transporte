@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  prepararNucleo, proximosTrenes, proximosConTransbordo, lineasDelTrayecto, numeroDesdeTrip, textoFaltan, textoDuracion, estacionesOrdenadas,
+  prepararNucleo, proximosTrenes, proximosConTransbordo, proximosCombinados, combinacionesMasRapidas, lineasDelTrayecto, numeroDesdeTrip, textoFaltan, textoDuracion, estacionesOrdenadas,
 } from '../js/modulos/trayectos.js';
 
 // Núcleo mínimo: A → B → C → D (C2) y A → B → E (C7, no pasa por C)
@@ -114,4 +114,43 @@ test('transbordo con retraso en vivo', () => {
   assert.equal(op.tramo1.idVehiculo, 'v4');
   assert.equal(textoDuracion(35), '35 min');
   assert.equal(textoDuracion(124), '2 h 4 min');
+});
+
+// Núcleo con un trayecto de dos transbordos (X → W → V → Z) y un directo más lento (X → Y → Z)
+const nucleoDos = prepararNucleo({
+  nucleo: 'Pruebas dos',
+  fechas: ['2026-11-01'],
+  lineas: [['L1', '00AA00', 'FFFFFF'], ['L2', '0000BB', 'FFFFFF'], ['L3', 'CC0000', 'FFFFFF'], ['L4', '888888', 'FFFFFF']],
+  estaciones: [['X', 'Origen'], ['W', 'Primera'], ['V', 'Segunda'], ['Z', 'Destino'], ['Y', 'Lenta']],
+  patrones: [[0, 1], [1, 2], [2, 3], [0, 4, 3]],
+  viajes: [
+    ['1004D20001L1', 0, 0, 0, 600, [10]], // X 10:00 · W 10:10
+    ['1004D20002L2', 0, 1, 1, 615, [10]], // W 10:15 · V 10:25
+    ['1004D20003L3', 0, 2, 2, 630, [10]], // V 10:30 · Z 10:40
+    ['1004D20004L4', 0, 3, 3, 605, [30, 30]], // X 10:05 · Y 10:35 · Z 11:05 (directo lento)
+  ],
+});
+
+test('trayecto con dos transbordos, sin contar el directo', () => {
+  assert.equal(proximosCombinados(nucleoDos, 'X', 'Z', enMadrid('09:50', '2026-11-01'), new Map(), { maxTransbordos: 1 }).length, 0);
+  const [op, ...resto] = proximosCombinados(nucleoDos, 'X', 'Z', enMadrid('09:50', '2026-11-01'), new Map(), { maxTransbordos: 2 });
+  assert.equal(resto.length, 0);
+  assert.equal(op.numTransbordos, 2);
+  assert.deepEqual(op.tramos.map((t) => t.linea.nombre), ['L1', 'L2', 'L3']);
+  assert.deepEqual(op.transbordos, [{ estacion: 'Primera', esperaMin: 5 }, { estacion: 'Segunda', esperaMin: 5 }]);
+  assert.equal(op.llega, '10:40');
+  assert.equal(op.duracionMin, 40);
+  assert.equal(op.tramo1, undefined, 'con dos transbordos no hay campos tramo1/tramo2');
+});
+
+test('combinaciones que llegan antes que el directo', () => {
+  const directos = proximosTrenes(nucleoDos, 'X', 'Z', enMadrid('09:50', '2026-11-01'));
+  assert.equal(directos[0].llega, '11:05');
+  const combis = proximosCombinados(nucleoDos, 'X', 'Z', enMadrid('09:50', '2026-11-01'), new Map(), { maxTransbordos: 2 });
+  assert.equal(combinacionesMasRapidas(directos, combis).length, 1);
+  // Si el directo llega antes que la combinación, no se ofrece
+  assert.deepEqual(combinacionesMasRapidas([{ _llega: 10 * 60 + 30 }], combis), []);
+  // Sin directos circulando, todas las combinaciones
+  assert.equal(combinacionesMasRapidas([], combis).length, 1);
+  assert.equal(combinacionesMasRapidas([{ cancelado: true, _llega: 1 }], combis).length, 1);
 });

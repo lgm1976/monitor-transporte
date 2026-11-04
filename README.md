@@ -13,7 +13,7 @@ Aplicación web estática que muestra en un mapa interactivo la posición y la p
 - **Próximo tren** entre dos estaciones de Cercanías, con cuenta atrás y retraso en vivo
 - **Panel de estación** de Cercanías y de **larga distancia** (próximos trenes en los dos sentidos, con OUIGO según horario) y **favoritos** de estaciones y trayectos; las estaciones se ven en el mapa (las de larga distancia desde lejos, las de Cercanías al acercarse)
 - **Avisos de servicio** de Renfe Cercanías (incidencias, obras y accesibilidad) en su pestaña, en la ficha de cada tren y en el panel de estación
-- **Arranque en tu zona**: si lo permites, el mapa se centra en tu posición al abrir la web (si hay trenes cerca), con el botón «Mi zona» para volver a ella cuando quieras (versión actual: **1.12**)
+- **Arranque en tu zona**: si lo permites, el mapa se centra en tu posición al abrir la web (si hay trenes cerca), con el botón «Mi zona» para volver a ella cuando quieras (versión actual: **1.13**)
 - **Información y novedades**: botón de la cabecera con la descripción del proyecto y lo nuevo de cada versión
 - Colores y umbrales de retraso definidos en `data/estilo_mapa.json`
 
@@ -309,7 +309,7 @@ Cada mejora que se note al usar la web **sube la versión y añade su entrada** 
 
 Las correcciones internas, los cambios de datos (la Action nocturna) y las mejoras que no cambian lo que se ve no llevan versión.
 
-Historial reconstruido a partir de los commits: 1.0 a 1.3 el 01/11/2026 (primera versión, fichas legibles y movimiento continuo, filtros y seguir un tren, OUIGO y «Próximo tren»), 1.4 a 1.11 el 02/11/2026 (trenes por la vía y recorrido, movimiento fluido, panel de estación y favoritos, avisos, grupos de trenes e información, el ajuste del movimiento en hora punta, las horas de paso en larga distancia y el panel de estación de larga distancia), y 1.12 el 04/11/2026 (arranque en tu zona y botón «Mi zona»).
+Historial reconstruido a partir de los commits: 1.0 a 1.3 el 01/11/2026 (primera versión, fichas legibles y movimiento continuo, filtros y seguir un tren, OUIGO y «Próximo tren»), 1.4 a 1.11 el 02/11/2026 (trenes por la vía y recorrido, movimiento fluido, panel de estación y favoritos, avisos, grupos de trenes e información, el ajuste del movimiento en hora punta, las horas de paso en larga distancia y el panel de estación de larga distancia), 1.12 el 04/11/2026 (arranque en tu zona y botón «Mi zona»), y 1.13 el 04/11/2026 (trayectos con dos transbordos y combinaciones que llegan antes que el directo).
 
 ## Horas de paso en larga distancia
 
@@ -404,7 +404,7 @@ Pestaña **«Próximo tren»** del panel lateral. Eliges el núcleo de Cercanía
 - Los **próximos seis trenes**, ordenados por salida: cuánto falta («en 4 min»), hora de salida, hora de llegada, duración y hacia dónde va el tren (útil en el andén).
 - **Retraso en vivo** de los trenes que ya circulan: la hora programada aparece tachada junto a la prevista, y la etiqueta dice «En vivo · 12 min tarde». Los que aún no han salido de cabecera se muestran «Según horario». Los cancelados se ven tachados.
 - **Ver en el mapa**: sigue ese tren (misma tarjeta y enlace que «Seguir este tren»).
-- **Con un transbordo** cuando ningún tren hace el trayecto directo (ver abajo).
+- **Con transbordos** cuando ningún tren hace el trayecto directo, y también cuando llega antes que el directo: aparecen debajo de los directos, en «Llega antes con transbordo» (ver abajo).
 
 Cómo se calcula (`js/modulos/trayectos.js`):
 
@@ -417,15 +417,17 @@ Los horarios salen del GTFS de Renfe, con **todas las paradas** de cada tren de 
 
 El trayecto queda en la URL, así que se puede guardar en favoritos o en la pantalla de inicio del móvil: `?red=madrid&desde=18002&hasta=70002`. Además, el navegador recuerda el último trayecto.
 
-**Trayectos con un transbordo.** Si ninguna línea va directa (p. ej. Fuenlabrada → Alcobendas), la app combina dos trenes:
+**Trayectos con transbordos.** Si ninguna línea va directa (p. ej. Fuenlabrada → Alcobendas, o Fuente de la Mora → Orcasitas, con dos cambios), la app combina dos o tres trenes. Y aunque haya directos, si una combinación llega antes que el primer directo que se muestra (p. ej. Torrelodones → Madrid-Recoletos: el directo llega a las 11:08 y un C8b + C10 a las 10:56), se ofrece debajo, en «Llega antes con transbordo».
 
-- Para cada tren que sale del origen, prueba a bajarse en cada estación posterior de su recorrido y coger allí el tren que **antes llegue al destino**, dejando al menos **4 minutos** para cambiar (`TRANSBORDO_MIN`) y como mucho 60 de espera.
-- El retraso en vivo cuenta en los dos tramos: si el primer tren va tarde y ya no da tiempo al enlace, propone el siguiente.
+- Para cada tren que sale del origen, la app busca la forma más temprana de llegar al destino con hasta **dos transbordos** (`MAX_TRANSBORDOS`). En cada cambio deja al menos **4 minutos** (`TRANSBORDO_MIN`) y como mucho 60 de espera. Si hay varias formas de llegar a la misma hora, gana la de menos trenes y menos espera.
+- Los trenes que salen de origen o de cada estación intermedia se buscan en un índice por estación; un tren que ya ha dejado atrás una estación no se coge en ella. Las combinaciones se buscan en profundidad con poda (`mejorRecorrido`).
+- El retraso en vivo cuenta en todos los tramos: si un tren va tarde y ya no da tiempo al enlace, propone el siguiente.
 - Se descartan las combinaciones que salen antes pero llegan igual o más tarde que otra.
-- Cada opción muestra cuánto falta para el primer tren, la hora de llegada final, la duración total y los dos tramos con línea, horas, sentido, estado (en vivo o según horario) y la estación de cambio con los minutos de espera. «Ver en el mapa» funciona para cada tramo que ya circula.
-- Solo se ofrece cuando no hay tren directo. Se calcula en el navegador en menos de 15 ms.
+- Cada opción muestra cuánto falta para el primer tren, la hora de llegada final, la duración total y cada tramo con línea, horas, sentido, estado (en vivo o según horario) y la estación de cambio con los minutos de espera. «Ver en el mapa» funciona para cada tramo que ya circula.
+- Los directos llegan de `proximosTrenes`; las combinaciones que llegan antes se eligen con `combinacionesMasRapidas` (puro, con pruebas en `tests/trayectos.test.mjs`).
+- Medido el 04/11/2026 con los datos de Cercanías Madrid (2.320 viajes), entre 300 pares de estaciones al azar: con dos transbordos, 12 ms de media y 50 ms como máximo (Node, sin navegador). Con uno, 4 ms de media.
 
-Límites: como mucho un transbordo y siempre dentro del mismo núcleo de Cercanías. El cambio se considera en la misma estación (no entre estaciones distintas cercanas, como Sol y otra) y no se tienen en cuenta otros operadores ni el metro.
+Límites: como mucho dos transbordos (tres trenes) y siempre dentro del mismo núcleo de Cercanías. El cambio se considera en la misma estación (no entre estaciones distintas cercanas, como Sol y otra) y no se tienen en cuenta otros operadores, el metro ni Media Distancia.
 
 ## Panel de estación y favoritos
 
@@ -789,7 +791,7 @@ Con la grabación de mediodía (15 minutos), de la fase 3 a la 4: en Cercanías,
 
 - Movimiento fluido, lo que queda: en Cercanías, pasar al modelo de velocidad los trenes cuyo viaje no casa con su horario (más de 10 minutos de adelanto). En larga distancia ya va con el horario (1.10); quedan los saltos que vienen de los datos de Renfe.
 - Panel de estación de larga distancia: andén cuando Renfe lo publique; avisos si algún día hay feed de larga distancia.
-- Ofrecer el transbordo también cuando llega antes que el directo; dos transbordos; Media Distancia.
+- Media Distancia en los trayectos con transbordo (hoy solo Cercanías).
 - Paradas del recorrido con los trenes que pasarán por ellas a lo largo del día (evolución de la fase 3).
 - Avisos de servicio: marcar en el mapa las estaciones con avisos de accesibilidad, resumen de avisos en los favoritos y en «Próximo tren», y enlace con la pestaña en la URL. Revisar si Renfe vuelve a actualizar su feed de avisos (congelado desde el 07/10/2026).
 - Filtro por operador cuando haya fuentes de otros operadores.

@@ -14,7 +14,7 @@
         "lista": [
           "Ver todos los trenes en el mapa con un color según su puntualidad y filtrarlos por tipo de servicio o por núcleo de Cercanías.",
           "Seguir un tren, con su recorrido y la hora de paso por cada parada, y mandar el enlace a quien te espera.",
-          "Consultar el próximo tren entre dos estaciones de Cercanías, también con un transbordo.",
+          "Consultar el próximo tren entre dos estaciones de Cercanías, también con uno o dos transbordos.",
           "Ver los próximos trenes de una estación, de Cercanías o de larga distancia, y guardar tus estaciones y trayectos favoritos.",
           "Leer los avisos de servicio de Renfe Cercanías: incidencias, obras y accesibilidad."
         ]
@@ -40,6 +40,16 @@
     ]
   },
   "versiones": [
+    {
+      "version": "1.13",
+      "fecha": "2026-11-04",
+      "titulo": "Trayectos con dos transbordos",
+      "cambios": [
+        "En «Próximo tren», si hay un trayecto con cambios que llega antes que el primer tren directo, lo verás debajo de los directos, en «Llega antes con transbordo».",
+        "Cuando no hay tren directo, la app busca ahora también trayectos con dos transbordos (tres trenes como máximo), además de los de uno.",
+        "Cada opción muestra los trenes en orden, las estaciones donde cambias y los minutos de espera en cada una."
+      ]
+    },
     {
       "version": "1.12",
       "fecha": "2026-11-04",
