@@ -13,7 +13,7 @@ Aplicación web estática que muestra en un mapa interactivo la posición y la p
 - **Próximo tren** entre dos estaciones de Cercanías, con cuenta atrás y retraso en vivo
 - **Panel de estación** de Cercanías y de **larga distancia** (próximos trenes en los dos sentidos, con OUIGO según horario) y **favoritos** de estaciones y trayectos; las estaciones se ven en el mapa (las de larga distancia desde lejos, las de Cercanías al acercarse)
 - **Avisos de servicio** de Renfe Cercanías (incidencias, obras y accesibilidad) en su pestaña, en la ficha de cada tren y en el panel de estación
-- **Arranque en tu zona**: si lo permites, el mapa se centra en tu posición al abrir la web (si hay trenes cerca), con el botón «Mi zona» para volver a ella cuando quieras (versión actual: **1.13**)
+- **Arranque en tu zona**: si lo permites, el mapa se centra en tu posición al abrir la web (si hay trenes cerca), con el botón «Mi zona» para volver a ella cuando quieras (versión actual: **1.14**)
 - **Información y novedades**: botón de la cabecera con la descripción del proyecto y lo nuevo de cada versión
 - Colores y umbrales de retraso definidos en `data/estilo_mapa.json`
 
@@ -309,7 +309,7 @@ Cada mejora que se note al usar la web **sube la versión y añade su entrada** 
 
 Las correcciones internas, los cambios de datos (la Action nocturna) y las mejoras que no cambian lo que se ve no llevan versión.
 
-Historial reconstruido a partir de los commits: 1.0 a 1.3 el 01/11/2026 (primera versión, fichas legibles y movimiento continuo, filtros y seguir un tren, OUIGO y «Próximo tren»), 1.4 a 1.11 el 02/11/2026 (trenes por la vía y recorrido, movimiento fluido, panel de estación y favoritos, avisos, grupos de trenes e información, el ajuste del movimiento en hora punta, las horas de paso en larga distancia y el panel de estación de larga distancia), 1.12 el 04/11/2026 (arranque en tu zona y botón «Mi zona»), y 1.13 el 04/11/2026 (trayectos con dos transbordos y combinaciones que llegan antes que el directo).
+Historial reconstruido a partir de los commits: 1.0 a 1.3 el 01/11/2026 (primera versión, fichas legibles y movimiento continuo, filtros y seguir un tren, OUIGO y «Próximo tren»), 1.4 a 1.11 el 02/11/2026 (trenes por la vía y recorrido, movimiento fluido, panel de estación y favoritos, avisos, grupos de trenes e información, el ajuste del movimiento en hora punta, las horas de paso en larga distancia y el panel de estación de larga distancia), 1.12 el 04/11/2026 (arranque en tu zona y botón «Mi zona»), 1.13 el 04/11/2026 (trayectos con dos transbordos y combinaciones que llegan antes que el directo), y 1.14 el 04/11/2026 (ficha y listado desde abajo en el móvil).
 
 ## Horas de paso en larga distancia
 
@@ -557,6 +557,15 @@ con `css/tailwind-entrada.css` conteniendo las tres directivas `@tailwind base; 
 
 Usa las teselas estándar de OpenStreetMap, que no piden clave pero están pensadas para tráfico ligero (consulta su política de uso). Si el proyecto gana visitas, cambia `CONFIG.mapa.teselas` por un proveedor con clave gratuita (MapTiler, Stadia Maps, Thunderforest). Los estilos de CARTO ahora exigen clave y muestran una marca de agua sin ella.
 
+## Ficha y listado en el móvil
+
+Desde la versión 1.14 (04/11/2026), en pantallas de 767 px o menos:
+
+- **La ficha del tren sube desde abajo** (`#hoja-ficha`) en lugar de aparecer como popup junto al marcador. Es la misma información y los mismos botones. Se cierra con la ✕, tocando el mapa o con Escape.
+- **El listado de trenes también sube desde abajo** (ocupa el 72 % de la altura). Al elegir un tren, se pliega para que se vea la ficha.
+- **Cómo funciona.** Leaflet sigue abriendo el popup al tocar un tren, pero `MapaTransporte` lo intercepta en `popupopen`, cierra el popup sin efectos secundarios (`_cerrandoPopup`) y pasa su contenido a la hoja (`_abrirHoja`). La hoja se actualiza en cada lectura del feed, igual que el popup. `cerrarFicha()` cierra una cosa u otra. El popup no se usa para nada en móvil, así que no hay que tocar el mapa de Leaflet.
+- **En escritorio** no cambia nada: se sigue usando el popup.
+
 ## Arranque en tu zona
 
 Desde la versión 1.12 (04/11/2026), al abrir la web el mapa intenta centrarse en la posición del usuario:
@@ -795,4 +804,3 @@ Con la grabación de mediodía (15 minutos), de la fase 3 a la 4: en Cercanías,
 - Paradas del recorrido con los trenes que pasarán por ellas a lo largo del día (evolución de la fase 3).
 - Avisos de servicio: marcar en el mapa las estaciones con avisos de accesibilidad, resumen de avisos en los favoritos y en «Próximo tren», y enlace con la pestaña en la URL. Revisar si Renfe vuelve a actualizar su feed de avisos (congelado desde el 07/10/2026).
 - Filtro por operador cuando haya fuentes de otros operadores.
-- Ficha deslizable desde abajo en el móvil también para el listado.

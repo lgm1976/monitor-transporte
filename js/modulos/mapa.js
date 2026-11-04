@@ -45,6 +45,9 @@ const DISTANCIA_MIN_RUMBO_KM = 0.05;
 const CAMBIO_MIN_RUMBO = 12;
 /** A partir de cuántos minutos una posición se marca como posiblemente desfasada */
 const MINUTOS_DATO_ANTIGUO = 10;
+/** ¿Pantalla de móvil? (la ficha del tren y el listado suben desde abajo) */
+const esMovil = () => window.matchMedia('(max-width: 767px)').matches;
+
 /** Zoom al empezar a seguir un tren */
 const ZOOM_SEGUIMIENTO = 13;
 /** Desvío (px) del tren respecto al centro a partir del cual se recentra */
@@ -325,8 +328,28 @@ export class MapaTransporte {
     this.mapa.on('moveend', () => this._programarAgrupacion());
     // Con la ficha cerrada, el tren elegido en el listado vuelve a poder agruparse
     this.mapa.on('popupclose', () => {
+      if (this._cerrandoPopup) return; // cierre para pasar la ficha a la hoja
       this.idEnfocado = null;
       this._programarAgrupacion();
+    });
+    // En móvil, la ficha del tren se muestra en la hoja de abajo y no como popup anclado al tren
+    this._hoja = document.getElementById('hoja-ficha');
+    this._hojaContenido = document.getElementById('hoja-contenido');
+    this._idHoja = null;
+    this._cerrandoPopup = false;
+    this.mapa.on('popupopen', (e) => {
+      if (!esMovil() || this._cerrandoPopup) return;
+      const id = e.popup._source?.options?.idVehiculo;
+      if (id === undefined) return;
+      this._cerrandoPopup = true;
+      this.mapa.closePopup(e.popup);
+      this._cerrandoPopup = false;
+      this._abrirHoja(id, e.popup.getContent());
+    });
+    document.getElementById('hoja-cerrar').addEventListener('click', () => this.cerrarFicha());
+    // Tocar el mapa cierra la hoja (como cierra un popup)
+    this.mapa.on('click', () => {
+      if (this._idHoja !== null) this.cerrarFicha();
     });
     // Si el usuario arrastra el mapa mientras sigue un tren, se respeta su
     // gesto: se deja de centrar (el tren sigue destacado) hasta que pulse «Centrar».
@@ -776,7 +799,7 @@ export class MapaTransporte {
   centrarEnSeguido({ volar = true } = {}) {
     const registro = this.idSeguido && this.marcadores.get(this.idSeguido);
     if (!registro) return;
-    registro.marcador.closePopup();
+    this.cerrarFicha();
     this.centrarSeguido = true;
     const destino = registro.tramo ? posicionDe(registro.tramo, performance.now()) : registro.marcador.getLatLng();
     const zoom = Math.max(this.mapa.getZoom(), ZOOM_SEGUIMIENTO);
@@ -950,7 +973,8 @@ export class MapaTransporte {
           keyboard: true,
           riseOnHover: true,
           zIndexOffset: v.id === this.idSeguido ? 1000 : 0,
-        }).bindPopup(htmlPopup(v, color), { maxWidth: 300, minWidth: 240 });
+          idVehiculo: v.id,
+        }).bindPopup(htmlPopup(v, color), { maxWidth: 300, minWidth: 240, autoPan: !esMovil() });
         marcador.addTo(this.mapa);
         const estimado = Boolean(this.estimador?.tiene(v.id));
         this.marcadores.set(v.id, { ...nuevo, marcador, rumboPintado: rumboInicial, estimado });
@@ -960,7 +984,9 @@ export class MapaTransporte {
 
       const anterior = registro.vehiculo;
       registro.vehiculo = v;
-      registro.marcador.setPopupContent(htmlPopup(v, color));
+      const ficha = htmlPopup(v, color);
+      registro.marcador.setPopupContent(ficha);
+      if (this._idHoja === v.id) this._hojaContenido.innerHTML = ficha;
       if (this.estimador?.tiene(v.id)) {
         // Lo mueve el estimador en cada fotograma: se cancela cualquier deslizamiento
         if (!registro.estimado) {
@@ -989,6 +1015,7 @@ export class MapaTransporte {
 
     for (const [id, registro] of this.marcadores) {
       if (!vistos.has(id)) {
+        if (this._idHoja === id) this.cerrarFicha();
         this.enMovimiento.delete(id);
         registro.marcador.remove();
         this.marcadores.delete(id);
@@ -1049,6 +1076,32 @@ export class MapaTransporte {
     const puntos = [...this.marcadores.values()].map((r) => r.marcador.getLatLng());
     if (puntos.length === 0) return;
     this.mapa.fitBounds(L.latLngBounds(puntos), { padding: [48, 48], maxZoom: 9 });
+  }
+
+  /** ¿Hay una ficha abierta en la hoja de móvil? */
+  hojaAbierta() {
+    return this._idHoja !== null;
+  }
+
+  /** Cierra la ficha del tren (popup o hoja de móvil) */
+  cerrarFicha() {
+    this.mapa.closePopup();
+    if (this._idHoja === null) return;
+    this._idHoja = null;
+    this.idEnfocado = null;
+    this._hoja.classList.remove('abierta');
+    this._hoja.setAttribute('aria-hidden', 'true');
+    this._programarAgrupacion();
+  }
+
+  /** Muestra la ficha de un tren en la hoja de móvil */
+  _abrirHoja(id, html) {
+    this._idHoja = id;
+    this.idEnfocado = id;
+    this._hojaContenido.innerHTML = html;
+    this._hoja.classList.add('abierta');
+    this._hoja.setAttribute('aria-hidden', 'false');
+    this._agrupar();
   }
 
   /** Centra el mapa en un vehículo y abre su popup */

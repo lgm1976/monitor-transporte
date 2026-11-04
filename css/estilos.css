@@ -65,13 +65,39 @@ body[data-cargando='true'] #btn-refrescar { opacity: 0.6; pointer-events: none; 
 /* ---------- Panel en móvil: superpuesto y plegable ---------- */
 @media (max-width: 767px) {
   .panel {
-    /* Por encima de los controles y la leyenda de Leaflet (z-index 1000) */
-    position: absolute; inset: 0 auto 0 0; z-index: 1100;
-    width: min(88vw, 22rem);
-    box-shadow: 0 10px 30px rgb(15 23 42 / 0.2);
-    transition: transform 0.2s ease;
+    /* Por encima de los controles y la leyenda de Leaflet (z-index 1000). Sube desde abajo */
+    position: absolute; inset: auto 0 0 0; z-index: 1100;
+    width: 100%; height: 72%;
+    border-radius: 1rem 1rem 0 0;
+    box-shadow: 0 -10px 30px rgb(15 23 42 / 0.2);
+    transition: transform 0.25s ease;
   }
-  body[data-panel='cerrado'] .panel { transform: translateX(-105%); }
+  body[data-panel='cerrado'] .panel { transform: translateY(105%); }
+}
+
+/* ---------- Ficha del tren en móvil: hoja que sube desde abajo ---------- */
+.hoja-ficha {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 1050; /* encima de los controles de Leaflet (1000) */
+  max-height: 60%; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
+  border-radius: 1rem 1rem 0 0; background: #fff;
+  box-shadow: 0 -10px 30px rgb(15 23 42 / 0.25);
+  transform: translateY(105%); visibility: hidden; pointer-events: none;
+  transition: transform 0.25s ease, visibility 0.25s;
+}
+.hoja-ficha.abierta { transform: none; visibility: visible; pointer-events: auto; }
+.hoja-asa { width: 40px; height: 4px; border-radius: 9999px; background: #cbd5e1; margin: 0 auto 6px; }
+.hoja-cerrar {
+  position: absolute; top: 8px; right: 10px; width: 30px; height: 30px; border-radius: 9999px;
+  font-size: 14px; line-height: 1; color: #475569; background: #f1f5f9;
+}
+.hoja-cerrar:hover { background: #e2e8f0; }
+.hoja-contenido { padding-right: 28px; }
+@media (prefers-reduced-motion: reduce) {
+  .hoja-ficha, .panel { transition: none; }
+}
+@media (min-width: 768px) {
+  .hoja-ficha { display: none; }
 }
 
 /* Base de OSM algo desaturada para que destaquen los colores de estado */

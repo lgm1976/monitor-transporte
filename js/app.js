@@ -168,7 +168,7 @@ function seguirTren(id) {
   const v = app.vehiculos.find((x) => x.id === id);
   if (!v) return;
   app.seguido = { clave: claveTren(v), centrar: true };
-  app.mapa.mapa.closePopup();
+  app.mapa.cerrarFicha();
   app.mapa.seguir(v.id, { acercar: true });
   // En móvil se pliega el listado para dejar ver el mapa
   if (window.matchMedia('(max-width: 767px)').matches) plegarPanel(true);
@@ -376,7 +376,7 @@ function abrirEstacion({ red, estacion }) {
 
 /** Abre la pestaña «Avisos» con los de un núcleo y, si se indica, una línea */
 function abrirAvisos({ nucleo = '', linea = '' } = {}) {
-  app.mapa.mapa.closePopup();
+  app.mapa.cerrarFicha();
   app.panelAvisos.abrir({ nucleo, linea });
   if (app.vista === 'avisos') app.panelAvisos.activar();
   else cambiarVista('avisos');
@@ -630,6 +630,10 @@ function conectarControles() {
 
   // Escape deja de seguir
   document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && app.mapa.hojaAbierta()) {
+      app.mapa.cerrarFicha();
+      return;
+    }
     if (e.key === 'Escape' && app.seguido && !document.querySelector('.leaflet-popup, dialog[open]')) dejarDeSeguir();
   });
 
@@ -665,6 +669,8 @@ async function iniciar() {
       // Mirar otro tren del listado no debe pelearse con el centrado del seguido
       if (id !== app.mapa.idSeguido) soltarCentrado();
       app.mapa.enfocar(id);
+      // En móvil, el listado se pliega para ver la ficha que sube desde abajo
+      if (window.matchMedia('(max-width: 767px)').matches) plegarPanel(true);
     },
     alCambiarFiltro: renderizar,
     alCambiarAmbito: () => {

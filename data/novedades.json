@@ -41,6 +41,16 @@
   },
   "versiones": [
     {
+      "version": "1.14",
+      "fecha": "2026-11-04",
+      "titulo": "Ficha y listado desde abajo en el móvil",
+      "cambios": [
+        "En el móvil, la ficha de un tren sube desde abajo, con toda su información y sus botones, en vez de aparecer junto al marcador. Se cierra con la ✕, tocando el mapa o con Escape.",
+        "El listado de trenes también sube desde abajo. Al elegir un tren, el listado se pliega para que veas su ficha.",
+        "En el ordenador no cambia nada."
+      ]
+    },
+    {
       "version": "1.13",
       "fecha": "2026-11-04",
       "titulo": "Trayectos con dos transbordos",
