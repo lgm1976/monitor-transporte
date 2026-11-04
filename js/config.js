@@ -142,6 +142,19 @@ export const CONFIG = {
    */
   proxyCors: 'https://proxy-gtfs-renfe.luis-gonzalezm.workers.dev/?url=',
 
+  /**
+   * Vista inicial en la zona del usuario. Si la URL no trae un tren, una
+   * estación ni un filtro, al arrancar se pide la ubicación al navegador; si
+   * la da y hay trenes a menos de `radioKm`, el mapa se centra ahí. Si no,
+   * se encuadra España. La posición no se guarda ni sale del navegador.
+   */
+  ubicacion: {
+    activa: true,
+    zoom: 11,
+    timeoutMs: 15000,
+    radioKm: 150,
+  },
+
   /** Color para vehículos sin dato de retraso (no viene en estilo_mapa.json) */
   colorSinDatos: '#94a3b8',
 

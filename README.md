@@ -13,7 +13,8 @@ Aplicación web estática que muestra en un mapa interactivo la posición y la p
 - **Próximo tren** entre dos estaciones de Cercanías, con cuenta atrás y retraso en vivo
 - **Panel de estación** de Cercanías y de **larga distancia** (próximos trenes en los dos sentidos, con OUIGO según horario) y **favoritos** de estaciones y trayectos; las estaciones se ven en el mapa (las de larga distancia desde lejos, las de Cercanías al acercarse)
 - **Avisos de servicio** de Renfe Cercanías (incidencias, obras y accesibilidad) en su pestaña, en la ficha de cada tren y en el panel de estación
-- **Información y novedades**: botón de la cabecera con la descripción del proyecto y lo nuevo de cada versión (versión actual: **1.11**)
+- **Arranque en tu zona**: si lo permites, el mapa se centra en tu posición al abrir la web (si hay trenes cerca), con el botón «Mi zona» para volver a ella cuando quieras (versión actual: **1.12**)
+- **Información y novedades**: botón de la cabecera con la descripción del proyecto y lo nuevo de cada versión
 - Colores y umbrales de retraso definidos en `data/estilo_mapa.json`
 
 ## Estructura
@@ -45,6 +46,7 @@ js/
     solapados.js           Un marcador por tren aunque el feed lo repita en varios viajes (puro, testeable)
     agrupacion.js          Grupos de trenes cercanos con el mapa alejado (puro, testeable)
     novedades.js           Versiones, novedades sin ver y validación de novedades.json (puro, testeable)
+    ubicacion.js           Vista inicial en la zona del usuario y botón «Mi zona» (puro, testeable)
     panelInfo.js           Ventana «Información» (el proyecto y novedades)
     mapa.js                Leaflet: marcadores, movimiento continuo, fichas, leyenda
     panel.js               Selectores de servicio y núcleo, contadores-filtro, buscador y listado
@@ -307,7 +309,7 @@ Cada mejora que se note al usar la web **sube la versión y añade su entrada** 
 
 Las correcciones internas, los cambios de datos (la Action nocturna) y las mejoras que no cambian lo que se ve no llevan versión.
 
-Historial reconstruido a partir de los commits: 1.0 a 1.3 el 01/11/2026 (primera versión, fichas legibles y movimiento continuo, filtros y seguir un tren, OUIGO y «Próximo tren»), 1.4 a 1.11 el 02/11/2026 (trenes por la vía y recorrido, movimiento fluido, panel de estación y favoritos, avisos, grupos de trenes e información, el ajuste del movimiento en hora punta, las horas de paso en larga distancia y el panel de estación de larga distancia).
+Historial reconstruido a partir de los commits: 1.0 a 1.3 el 01/11/2026 (primera versión, fichas legibles y movimiento continuo, filtros y seguir un tren, OUIGO y «Próximo tren»), 1.4 a 1.11 el 02/11/2026 (trenes por la vía y recorrido, movimiento fluido, panel de estación y favoritos, avisos, grupos de trenes e información, el ajuste del movimiento en hora punta, las horas de paso en larga distancia y el panel de estación de larga distancia), y 1.12 el 04/11/2026 (arranque en tu zona y botón «Mi zona»).
 
 ## Horas de paso en larga distancia
 
@@ -553,6 +555,19 @@ con `css/tailwind-entrada.css` conteniendo las tres directivas `@tailwind base; 
 
 Usa las teselas estándar de OpenStreetMap, que no piden clave pero están pensadas para tráfico ligero (consulta su política de uso). Si el proyecto gana visitas, cambia `CONFIG.mapa.teselas` por un proveedor con clave gratuita (MapTiler, Stadia Maps, Thunderforest). Los estilos de CARTO ahora exigen clave y muestran una marca de agua sin ella.
 
+## Arranque en tu zona
+
+Desde la versión 1.12 (04/11/2026), al abrir la web el mapa intenta centrarse en la posición del usuario:
+
+- **Cuándo se pide.** Solo si la URL no trae un tren (`tren`), una estación (`estacion`), un trayecto (`red`) ni un filtro (`servicio`, `nucleo`). Los enlaces compartidos mandan.
+- **Qué hace el navegador.** Muestra su petición de permiso si la web no lo tiene. Con `enableHighAccuracy: false` (basta la zona y no se usa el GPS) y `maximumAge` de 10 minutos. Si no contesta en `CONFIG.ubicacion.timeoutMs` (15 s), sigue como si se hubiera rechazado.
+- **Qué se ve.** Si hay posición y algún tren a menos de `CONFIG.ubicacion.radioKm` (150 km), el mapa se centra en el usuario con zoom `CONFIG.ubicacion.zoom` (11, donde ya se ven los trenes sueltos). Si no, se encuadra España como antes. Esto cubre a quien esté fuera de la red (Portugal, Canarias…).
+- **Botón «Mi zona»** junto a «Ver todos»: vuelve a pedir la posición y centra el mapa (siempre, sin el filtro de distancia). Deja un punto azul donde está el usuario; el punto no es interactivo.
+- **Privacidad.** La posición solo vive en la memoria de la pestaña: no se guarda, no se envía a ningún servicio y no se usa para nada más que centrar el mapa.
+- **Decisión de diseño.** La petición se hace al cargar, no con un botón previo, porque el encargo era arrancar centrado. Si molesta, basta cambiar `CONFIG.ubicacion.activa` a `false` (deja solo el botón) o quitar la llamada de `iniciar()` en `app.js`.
+
+Lógica en `js/modulos/ubicacion.js` (`tieneVistaPropia`, `vistaInicialPara` y `obtenerPosicion`; las dos primeras, con pruebas en `tests/ubicacion.test.mjs`). `MapaTransporte.aplicarVistaInicial` decide la vista; `centrarEnUsuario` la del botón.
+
 ## Plan: que los trenes vayan siempre por las vías (fases 1, 2 y 3 hechas)
 
 Diagnóstico del 01/11/2026. Los trenes se salían de la vía por tres motivos:
@@ -773,7 +788,6 @@ Con la grabación de mediodía (15 minutos), de la fase 3 a la 4: en Cercanías,
 ## Próximos pasos sugeridos
 
 - Movimiento fluido, lo que queda: en Cercanías, pasar al modelo de velocidad los trenes cuyo viaje no casa con su horario (más de 10 minutos de adelanto). En larga distancia ya va con el horario (1.10); quedan los saltos que vienen de los datos de Renfe.
-- Arrancar centrado en la zona del usuario (con permiso de ubicación).
 - Panel de estación de larga distancia: andén cuando Renfe lo publique; avisos si algún día hay feed de larga distancia.
 - Ofrecer el transbordo también cuando llega antes que el directo; dos transbordos; Media Distancia.
 - Paradas del recorrido con los trenes que pasarán por ellas a lo largo del día (evolución de la fase 3).

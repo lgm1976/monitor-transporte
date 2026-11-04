@@ -41,6 +41,16 @@
   },
   "versiones": [
     {
+      "version": "1.12",
+      "fecha": "2026-11-04",
+      "titulo": "Arranque en tu zona",
+      "cambios": [
+        "Al abrir la web, el mapa se centra en tu zona si lo permites y hay trenes cerca. Si no das permiso o estás lejos de los trenes, se ve toda España como antes.",
+        "El botón «Mi zona», junto a «Ver todos», te lleva a tu posición cuando quieras. Un punto azul marca dónde estás.",
+        "Si abres un enlace con un tren, una estación o un filtro, se muestra eso y no tu zona. Tu ubicación no se guarda ni se envía a ningún sitio."
+      ]
+    },
+    {
       "version": "1.11",
       "fecha": "2026-11-02",
       "titulo": "Panel de estación para larga distancia",

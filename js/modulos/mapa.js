@@ -1003,6 +1003,48 @@ export class MapaTransporte {
     this._agrupar();
   }
 
+  /**
+   * Vista inicial (decidida por vistaInicialPara): en la zona del usuario o
+   * toda España. Sin trenes todavía, se encuadra en la primera lectura.
+   */
+  aplicarVistaInicial(vista, posicion) {
+    if (vista.tipo === 'usuario') {
+      this.ajustadoInicial = true;
+      this.mapa.setView([vista.lat, vista.lon], CONFIG.ubicacion.zoom, { animate: false });
+      this.marcarUsuario(posicion);
+      return;
+    }
+    if (this.marcadores.size === 0) {
+      this.ajustadoInicial = false;
+      return;
+    }
+    this.ajustadoInicial = true;
+    this.encuadrarTodo();
+  }
+
+  /** Centra el mapa en el usuario (botón «Mi zona») */
+  centrarEnUsuario(posicion) {
+    this.marcarUsuario(posicion);
+    this.mapa.flyTo([posicion.lat, posicion.lon], CONFIG.ubicacion.zoom, { duration: 0.9 });
+  }
+
+  /** Punto azul con la posición del usuario; solo es informativo */
+  marcarUsuario(posicion) {
+    const latlng = [posicion.lat, posicion.lon];
+    if (!this.marcadorUsuario) {
+      this.marcadorUsuario = L.circleMarker(latlng, {
+        radius: 7,
+        color: '#ffffff',
+        weight: 2,
+        fillColor: '#2563eb',
+        fillOpacity: 1,
+        interactive: false,
+      }).addTo(this.mapa);
+    } else {
+      this.marcadorUsuario.setLatLng(latlng);
+    }
+  }
+
   encuadrarTodo() {
     const puntos = [...this.marcadores.values()].map((r) => r.marcador.getLatLng());
     if (puntos.length === 0) return;

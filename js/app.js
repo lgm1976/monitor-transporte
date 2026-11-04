@@ -19,6 +19,7 @@
 import { CONFIG } from './config.js';
 import { pedirJson } from './utilidades/red.js';
 import { MapaTransporte, escaparHtml, htmlPildora, htmlBotonAvisos, htmlHoraParada } from './modulos/mapa.js';
+import { tieneVistaPropia, vistaInicialPara, obtenerPosicion } from './modulos/ubicacion.js';
 import { ETIQUETAS_ESTADO, describirAntiguedad } from './modulos/estado.js';
 import { claveTren, buscarTren, leerEstadoUrl, escribirEstadoUrl, enlaceTren } from './modulos/filtros.js';
 import { PanelLateral } from './modulos/panel.js';
@@ -499,6 +500,19 @@ function programar() {
   }, CONFIG.intervaloRefrescoSeg * 1000 * factor);
 }
 
+/**
+ * Aplica la vista inicial en la zona del usuario cuando llega su posición
+ * (o encuadra España si no la hay o está lejos de los trenes)
+ */
+function aplicarVistaInicialPendiente() {
+  const pendiente = app.ubicacionInicial;
+  if (!pendiente) return;
+  app.ubicacionInicial = null;
+  pendiente.then((posicion) => {
+    app.mapa.aplicarVistaInicial(vistaInicialPara(posicion, app.vehiculos, CONFIG.ubicacion.radioKm), posicion);
+  });
+}
+
 /** Cambia entre modo simulado y real */
 async function establecerModo(modo, { esArranque = false } = {}) {
   app.modo = modo === 'real' ? 'real' : 'mock';
@@ -533,6 +547,7 @@ async function establecerModo(modo, { esArranque = false } = {}) {
     mostrarAviso(error.message, 'error');
   }
   await refrescar();
+  aplicarVistaInicialPendiente();
   if (app.seguido) {
     // Enlace compartido: vuela al tren o, si aún no aparece, muestra toda la zona
     const v = vehiculoSeguido();
@@ -571,6 +586,15 @@ function conectarControles() {
   $('btn-encuadrar').addEventListener('click', () => {
     soltarCentrado();
     app.mapa.encuadrarTodo();
+  });
+  $('btn-mi-zona').addEventListener('click', async () => {
+    const posicion = await obtenerPosicion({ timeoutMs: CONFIG.ubicacion.timeoutMs });
+    if (!posicion) {
+      mostrarToast('No he podido saber dónde estás. Revisa que hayas dado permiso de ubicación a la web.');
+      return;
+    }
+    soltarCentrado();
+    app.mapa.centrarEnUsuario(posicion);
   });
 
   // Panel plegable en móvil
@@ -706,6 +730,11 @@ async function iniciar() {
   } else if (estadoUrl.desde || estadoUrl.hasta || estadoUrl.red) {
     cambiarVista('trayecto');
     plegarPanel(false);
+  }
+  // Sin enlace a un tren, estación o filtro, el mapa arranca en la zona del usuario
+  if (CONFIG.ubicacion?.activa && !tieneVistaPropia(estadoUrl)) {
+    app.ubicacionInicial = obtenerPosicion({ timeoutMs: CONFIG.ubicacion.timeoutMs });
+    app.mapa.ajustadoInicial = true; // la primera lectura no encuadra España
   }
   await establecerModo(estadoUrl.modo || CONFIG.modoPorDefecto, { esArranque: true });
 }
