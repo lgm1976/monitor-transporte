@@ -41,6 +41,16 @@
   },
   "versiones": [
     {
+      "version": "1.15",
+      "fecha": "2026-11-04",
+      "titulo": "Trenes de Cercanías que no casan con su horario",
+      "cambios": [
+        "Un tren de Cercanías que va más de 10 minutos por delante de su horario ya no se mueve según ese horario, que no es el suyo, sino según su velocidad real por la vía, hasta que cambie de viaje.",
+        "Son pocos trenes a la vez, así que el cambio se nota poco.",
+        "En larga distancia y en el resto de trenes no cambia nada."
+      ]
+    },
+    {
       "version": "1.14",
       "fecha": "2026-11-04",
       "titulo": "Ficha y listado desde abajo en el móvil",
