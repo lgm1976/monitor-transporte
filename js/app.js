@@ -534,7 +534,8 @@ async function establecerModo(modo, { esArranque = false } = {}) {
   renderizar(); // limpia mapa y listado antes de la primera lectura del nuevo modo
   app.fallosSeguidos = 0;
   // Con un tren que seguir no se encuadra toda España: se va directo a él
-  app.mapa.ajustadoInicial = Boolean(app.seguido);
+  // Con un tren que seguir, o con la vista en la zona del usuario, no se encuadra España
+  app.mapa.ajustadoInicial = Boolean(app.seguido) || Boolean(app.ubicacionInicial);
   app.mapa.fijarDuracionInicial(
     app.modo === 'mock' ? CONFIG.intervaloRefrescoSeg : CONFIG.animacion.duracionInicialSeg
   );
@@ -734,7 +735,6 @@ async function iniciar() {
   // Sin enlace a un tren, estación o filtro, el mapa arranca en la zona del usuario
   if (CONFIG.ubicacion?.activa && !tieneVistaPropia(estadoUrl)) {
     app.ubicacionInicial = obtenerPosicion({ timeoutMs: CONFIG.ubicacion.timeoutMs });
-    app.mapa.ajustadoInicial = true; // la primera lectura no encuadra España
   }
   await establecerModo(estadoUrl.modo || CONFIG.modoPorDefecto, { esArranque: true });
 }
