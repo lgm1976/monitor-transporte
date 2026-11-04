@@ -121,6 +121,29 @@ test('Estimador con horario: el retraso real corrige el modelo sin saltos', () =
   }
 });
 
+test('Estimador con horario: un tren más de 10 min por delante de su horario pasa a velocidad', () => {
+  const est = new Estimador({}, { horarioDe: () => PARADAS });
+  // En 2.000 m a los 700 s antes de la hora de origen: el horario lo quiere ahí a los 120 s
+  est.actualizar([tren(2000)], seg(-700));
+  assert.equal(est.trenes.get('X').modelo, 'velocidad');
+  // Sigue avanzando por la vía con su velocidad, sin marcha atrás
+  const s = recorrer(est, -700, -640);
+  assert.ok(s[s.length - 1] > 2000, 'avanza');
+  for (let i = 1; i < s.length; i++) assert.ok(s[i] >= s[i - 1], 'nunca marcha atrás');
+});
+
+test('Estimador con horario: en larga distancia un tren muy adelantado sigue con su horario', () => {
+  const est = new Estimador({}, { horarioDe: () => PARADAS });
+  est.actualizar([tren(2000, { servicio: 'AVE', familia: 'AVE' })], seg(-700));
+  assert.equal(est.trenes.get('X').modelo, 'horario');
+});
+
+test('Estimador con horario: un tren 5 min por delante sigue con su horario', () => {
+  const est = new Estimador({}, { horarioDe: () => PARADAS });
+  est.actualizar([tren(2000)], seg(-300));
+  assert.equal(est.trenes.get('X').modelo, 'horario');
+});
+
 test('Estimador: espera en la estación de origen mientras Renfe lo da allí', () => {
   const est = new Estimador({}, { horarioDe: () => PARADAS });
   est.actualizar([tren(0)], seg(-60));

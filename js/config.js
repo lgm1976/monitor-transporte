@@ -102,6 +102,11 @@ export const CONFIG = {
      */
     paradasHorizonte: 1,
     esperaSalidaSeg: 0,
+    /**
+     * Cercanías: un tren más de este tiempo (s) por delante de su horario no
+     * está en ese viaje y pasa al modelo de velocidad
+     */
+    adelantoMaxSeg: 600,
     /** Un tren que falta en el feed se mantiene hasta este tiempo (s) */
     retenerAusenteSeg: 600,
     /**

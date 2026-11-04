@@ -796,9 +796,14 @@ Con la grabación de mediodía (15 minutos), de la fase 3 a la 4: en Cercanías,
 
 **En el navegador** (02/11/2026, de 18:58 a 19:15, datos reales, Madrid con zoom 12, dos minutos y medio por versión tras 90 s de arranque): 4 saltos en la versión nueva frente a 11 en la de la fase 3 (en otra pasada, 6 y 6), unos 58 fotogramas por segundo y sin errores. Más trenes esperan en una estación (29 frente a 10). Fuera de estación quedaron 2 (frente a 0), los dos en la zona de Chamartín y Fuencarral. En el modo simulado, sin saltos y sin errores.
 
+### Trenes que no casan con su horario (Cercanías)
+
+Un tren de Cercanías sigue su horario mientras el horario explique lo que hace. Si, aun con el mayor retraso que cuadra con su posición, va **más de 10 minutos por delante** de su horario, el viaje no es el suyo o Renfe lo ha adelantado mucho: pasa al modelo de velocidad y se queda ahí hasta que cambie de viaje. El umbral es `adelantoMaxSeg` (en `CONFIG.estimador` y `AJUSTES_ESTIMADOR`). Larga distancia no cambia: sigue con su horario.
+
+Con la grabación de hora punta (02/11/2026, 18:17): 11 de los 441 trenes de Cercanías pasan a velocidad (7 en la de mediodía). Según el retraso que publica Renfe, tres van unos 100 minutos adelantados (el feed les asigna un viaje de otro tren), uno unos 33 minutos, y los otros siete entre 10 minutos de adelanto y 5 de retraso: ahí el que no casa es el horario de ese viaje, no el tren. El banco de pruebas apenas se mueve en Cercanías (saltos 1,8 por hora de tren, paradas fuera de estación 0,07 → 0,08, distancia a la referencia 873 → 874 m): los saltos que quedan vienen de los datos de Renfe. Pendiente: por qué esos siete viajes tienen un horario que no cuadra con el retraso que publica Renfe.
+
 ## Próximos pasos sugeridos
 
-- Movimiento fluido, lo que queda: en Cercanías, pasar al modelo de velocidad los trenes cuyo viaje no casa con su horario (más de 10 minutos de adelanto). En larga distancia ya va con el horario (1.10); quedan los saltos que vienen de los datos de Renfe.
 - Panel de estación de larga distancia: andén cuando Renfe lo publique; avisos si algún día hay feed de larga distancia.
 - Media Distancia en los trayectos con transbordo (hoy solo Cercanías).
 - Paradas del recorrido con los trenes que pasarán por ellas a lo largo del día (evolución de la fase 3).

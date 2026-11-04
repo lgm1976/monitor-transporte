@@ -107,6 +107,12 @@ export const AJUSTES_ESTIMADOR = {
   esperaSalidaSeg: 0,
   /** Un retraso efectivo mayor que esto indica que el horario no es el suyo (s) */
   retrasoMaxSeg: 3 * 3600,
+  /**
+   * Cercanías: un tren que va más de este tiempo (s) por delante de su
+   * horario en la posición en que está no circula en ese viaje (el feed le
+   * asigna otro, o Renfe lo ha adelantado mucho): pasa al modelo de velocidad
+   */
+  adelantoMaxSeg: 600,
   /** Retrocesos menores que esto (m) son redondeos del feed y se ignoran */
   retrocesoIgnoradoM: 60,
   /** Tras tantas posiciones seguidas hacia atrás, el tren deja de estimarse (viaje mal asignado) */
@@ -496,13 +502,22 @@ export class Estimador {
   _corregirRetraso(e, sObs, tObs) {
     const [desde, hasta] = intervaloEnPerfil(e.perfil, sObs, e.margenM);
     const nuevo = acotar(e.retrasoMs, tObs - hasta, tObs - desde);
-    if (!Number.isFinite(nuevo) || Math.abs(nuevo) > this.a.retrasoMaxSeg * 1000) {
+    // tObs − desde es el mayor retraso que cuadra con esta posición: si ni
+    // con él llega a tiempo, el tren va más de `adelantoMaxSeg` por delante
+    // de su horario y el viaje no casa con lo que hace
+    const adelantado = e.vehiculo?.servicio === 'Cercanías' && tObs - desde < -this.a.adelantoMaxSeg * 1000;
+    if (!Number.isFinite(nuevo) || Math.abs(nuevo) > this.a.retrasoMaxSeg * 1000 || adelantado) {
       // El horario no cuadra con lo que hace el tren: modelo de velocidad
-      e.modelo = 'velocidad';
-      e.perfil = null;
+      this._pasarAVelocidad(e);
       return;
     }
     e.retrasoMs = nuevo;
+  }
+
+  /** El tren pasa a seguir su velocidad real por la vía (ya no se mira su horario) */
+  _pasarAVelocidad(e) {
+    e.modelo = 'velocidad';
+    e.perfil = null;
   }
 
   /**
