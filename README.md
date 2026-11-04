@@ -13,7 +13,7 @@ Aplicación web estática que muestra en un mapa interactivo la posición y la p
 - **Próximo tren** entre dos estaciones de Cercanías, con cuenta atrás y retraso en vivo
 - **Panel de estación** de Cercanías y de **larga distancia** (próximos trenes en los dos sentidos, con OUIGO según horario) y **favoritos** de estaciones y trayectos; las estaciones se ven en el mapa (las de larga distancia desde lejos, las de Cercanías al acercarse)
 - **Avisos de servicio** de Renfe Cercanías (incidencias, obras y accesibilidad) en su pestaña, en la ficha de cada tren y en el panel de estación
-- **Arranque en tu zona**: si lo permites, el mapa se centra en tu posición al abrir la web (si hay trenes cerca), con el botón «Mi zona» para volver a ella cuando quieras (versión actual: **1.15**)
+- **Arranque en tu zona**: si lo permites, el mapa se centra en tu posición al abrir la web (si hay trenes cerca), con el botón «Mi zona» para volver a ella cuando quieras (versión actual: **1.16**)
 - **Información y novedades**: botón de la cabecera con la descripción del proyecto y lo nuevo de cada versión
 - Colores y umbrales de retraso definidos en `data/estilo_mapa.json`
 
@@ -309,7 +309,7 @@ Cada mejora que se note al usar la web **sube la versión y añade su entrada** 
 
 Las correcciones internas, los cambios de datos (la Action nocturna) y las mejoras que no cambian lo que se ve no llevan versión.
 
-Historial reconstruido a partir de los commits: 1.0 a 1.3 el 01/11/2026 (primera versión, fichas legibles y movimiento continuo, filtros y seguir un tren, OUIGO y «Próximo tren»), 1.4 a 1.11 el 02/11/2026 (trenes por la vía y recorrido, movimiento fluido, panel de estación y favoritos, avisos, grupos de trenes e información, el ajuste del movimiento en hora punta, las horas de paso en larga distancia y el panel de estación de larga distancia), 1.12 el 04/11/2026 (arranque en tu zona y botón «Mi zona»), 1.13 el 04/11/2026 (trayectos con dos transbordos y combinaciones que llegan antes que el directo), 1.14 el 04/11/2026 (ficha y listado desde abajo en el móvil), y 1.15 el 04/11/2026 (trenes de Cercanías que no casan con su horario).
+Historial reconstruido a partir de los commits: 1.0 a 1.3 el 01/11/2026 (primera versión, fichas legibles y movimiento continuo, filtros y seguir un tren, OUIGO y «Próximo tren»), 1.4 a 1.11 el 02/11/2026 (trenes por la vía y recorrido, movimiento fluido, panel de estación y favoritos, avisos, grupos de trenes e información, el ajuste del movimiento en hora punta, las horas de paso en larga distancia y el panel de estación de larga distancia), 1.12 el 04/11/2026 (arranque en tu zona y botón «Mi zona»), 1.13 el 04/11/2026 (trayectos con dos transbordos y combinaciones que llegan antes que el directo), 1.14 el 04/11/2026 (ficha y listado desde abajo en el móvil), 1.15 el 04/11/2026 (trenes de Cercanías que no casan con su horario) y 1.16 el 04/11/2026 (Media Distancia en los trayectos con transbordo).
 
 ## Horas de paso en larga distancia
 
@@ -425,9 +425,10 @@ El trayecto queda en la URL, así que se puede guardar en favoritos o en la pant
 - Se descartan las combinaciones que salen antes pero llegan igual o más tarde que otra.
 - Cada opción muestra cuánto falta para el primer tren, la hora de llegada final, la duración total y cada tramo con línea, horas, sentido, estado (en vivo o según horario) y la estación de cambio con los minutos de espera. «Ver en el mapa» funciona para cada tramo que ya circula.
 - Los directos llegan de `proximosTrenes`; las combinaciones que llegan antes se eligen con `combinacionesMasRapidas` (puro, con pruebas en `tests/trayectos.test.mjs`).
+- Los trenes de **Media Distancia** que paran en el núcleo entran en las combinaciones como tramos de cambio, con su hora de llegada a la estación de cambio (teniendo en cuenta la parada). Nunca aparecen como directos. Regional, Regional Exprés y Proximidad no se usan.
 - Medido el 04/11/2026 con los datos de Cercanías Madrid (2.320 viajes), entre 300 pares de estaciones al azar: con dos transbordos, 12 ms de media y 50 ms como máximo (Node, sin navegador). Con uno, 4 ms de media.
 
-Límites: como mucho dos transbordos (tres trenes) y siempre dentro del mismo núcleo de Cercanías. El cambio se considera en la misma estación (no entre estaciones distintas cercanas, como Sol y otra) y no se tienen en cuenta otros operadores, el metro ni Media Distancia.
+Límites: como mucho dos transbordos (tres trenes). Los directos son solo de Cercanías del núcleo elegido; la Media Distancia solo sirve para hacer el cambio. No se tienen en cuenta Regional, Regional Exprés, Proximidad, otros operadores ni el metro. El cambio se considera en la misma estación (no entre estaciones distintas cercanas, como Sol y otra).
 
 ## Panel de estación y favoritos
 

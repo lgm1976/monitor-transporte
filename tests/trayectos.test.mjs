@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import {
   prepararNucleo, proximosTrenes, proximosConTransbordo, proximosCombinados, combinacionesMasRapidas, lineasDelTrayecto, numeroDesdeTrip, textoFaltan, textoDuracion, estacionesOrdenadas,
 } from '../js/modulos/trayectos.js';
+import { conMediaDistancia } from '../js/modulos/estacion.js';
 
 // Núcleo mínimo: A → B → C → D (C2) y A → B → E (C7, no pasa por C)
 const nucleo = prepararNucleo({
@@ -153,4 +154,42 @@ test('combinaciones que llegan antes que el directo', () => {
   // Sin directos circulando, todas las combinaciones
   assert.equal(combinacionesMasRapidas([], combis).length, 1);
   assert.equal(combinacionesMasRapidas([{ cancelado: true, _llega: 1 }], combis).length, 1);
+});
+
+/* ---------- Media Distancia en los transbordos ---------- */
+
+// Media Distancia B → H → G: sale de B a las 10:10, llega a H a las 10:15 (para 5 min) y a G a las 10:34.
+// Solo B está en el núcleo. El AVE B → G no cuenta: no es Media Distancia.
+const ldRaw = {
+  nucleo: 'Larga distancia',
+  fechas: ['2026-10-31', '2026-11-01', '2026-11-02'],
+  lineas: [['Media Distancia', '', ''], ['AVE', '', '']],
+  estaciones: [['B', 'Atocha'], ['H', 'Torrejón'], ['G', 'Cuenca'], ['Z', 'Otro lado']],
+  patrones: [[0, 1, 2], [0, 2], [3, 2]],
+  viajes: [
+    ['1010012026-11-01', 1, 0, 0, 610, [10, 14], [0, 5, 0]],
+    ['1020012026-11-01', 1, 1, 1, 600, [30], [0, 0]],
+  ],
+};
+
+test('Media Distancia: se usa para el cambio, con su hora de llegada (la parada cuenta)', () => {
+  const red = conMediaDistancia(nucleo, ldRaw);
+  const [op, ...resto] = proximosCombinados(red, 'A', 'H', enMadrid('09:50'), new Map(), { maxTransbordos: 1, cuantos: 4 });
+  assert.equal(resto.length, 0);
+  assert.equal(op.tramos[0].linea.nombre, 'C2');
+  assert.equal(op.tramos[1].linea.nombre, 'Media Distancia');
+  assert.equal(op.tramos[1].numeroTren, '10100');
+  assert.equal(op.transbordos[0].estacion, 'Atocha');
+  assert.equal(op.transbordos[0].esperaMin, 5);
+  assert.equal(op.llega, '10:15');
+});
+
+test('Media Distancia: nunca aparece como tren directo', () => {
+  const red = conMediaDistancia(nucleo, ldRaw);
+  assert.deepEqual(proximosTrenes(red, 'B', 'H', enMadrid('09:50')), []);
+  assert.ok(proximosTrenes(red, 'A', 'B', enMadrid('09:50')).every((t) => t.linea.nombre !== 'Media Distancia'));
+});
+
+test('Sin Media Distancia que pare en el núcleo, la red es la misma', () => {
+  assert.equal(conMediaDistancia(nucleo, { ...ldRaw, lineas: [['AVE', '', '']] }), nucleo);
 });

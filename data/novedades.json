@@ -41,6 +41,16 @@
   },
   "versiones": [
     {
+      "version": "1.16",
+      "fecha": "2026-11-04",
+      "titulo": "Media Distancia en los trayectos con transbordo",
+      "cambios": [
+        "En «Próximo tren», los trayectos con transbordo pueden usar trenes de Media Distancia para hacer el cambio, además de Cercanías. Aparecen combinaciones que antes no salían.",
+        "Los trenes de Media Distancia no se muestran como directos: solo aparecen en las combinaciones con transbordo.",
+        "Las horas de llegada a la estación de cambio tienen en cuenta el tiempo que el tren se para en ella."
+      ]
+    },
+    {
       "version": "1.15",
       "fecha": "2026-11-04",
       "titulo": "Trenes de Cercanías que no casan con su horario",

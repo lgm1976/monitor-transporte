@@ -30,6 +30,20 @@ export function numeroDesdeTrip(tripId) {
 }
 
 /**
+ * Número de tren en cualquier formato: Cercanías («3004D18779C3» → 18779),
+ * larga distancia y Media Distancia («0019012026-11-03» → 00190) y OUIGO
+ * («6610-2026-11-02» → 6610).
+ */
+export function numeroTren(tripId) {
+  const cercanias = numeroDesdeTrip(tripId);
+  if (cercanias) return cercanias;
+  const ld = /^(\d{5})\d\d{4}-\d\d-\d\d$/.exec(String(tripId));
+  if (ld) return ld[1];
+  const ouigo = /^(\d{3,6})-\d{4}-\d\d-\d\d$/.exec(String(tripId));
+  return ouigo ? ouigo[1] : null;
+}
+
+/**
  * Índices útiles del núcleo: estación → posición y, por patrón, la
  * posición de cada estación en él. Se calcula una vez por núcleo.
  */
@@ -165,12 +179,17 @@ function datosLinea(nucleo, iLinea) {
   return { nombre, color: `#${color}`, colorTexto: `#${colorTexto}` };
 }
 
-/** Hora (minutos desde la medianoche de hoy) a la que el viaje pasa por cada posición de su patrón */
+/**
+ * Horas (minutos desde la medianoche de hoy) del viaje en cada posición de su
+ * patrón: `horas` es la de salida y `llegadas` la de llegada. Son iguales salvo
+ * en larga distancia, donde el tren se para en algunas estaciones (estancias).
+ */
 function horasDelViaje(viaje, desfaseFecha) {
-  const [, iFecha, , , salida, tramos] = viaje;
+  const [, iFecha, , , salida, tramos, estancias] = viaje;
   const horas = [desfaseFecha[iFecha] + salida];
   for (const t of tramos) horas.push(horas[horas.length - 1] + t);
-  return horas;
+  const llegadas = horas.map((h, k) => h - (estancias?.[k] ?? 0));
+  return { horas, llegadas };
 }
 
 /** Retraso en minutos de un viaje en vivo (0 si no circula o va puntual/adelantado) */
@@ -189,7 +208,8 @@ function indiceSalidas(nucleo, ahora, enVivo, desfaseFecha) {
   const hasta = ahora + HORIZONTE_MIN + ESPERA_MAX_MIN * MAX_TRANSBORDOS;
   const salidas = new Map();
 
-  for (const viaje of nucleo.viajes) {
+  // Los de Media Distancia (viajesTransbordo) solo sirven para hacer el cambio
+  for (const viaje of [...nucleo.viajes, ...(nucleo.viajesTransbordo ?? [])]) {
     const [tripId, , iLinea, iPatron] = viaje;
     const vivo = enVivo.get(tripId);
     if (vivo?.cancelado) continue;
@@ -199,14 +219,14 @@ function indiceSalidas(nucleo, ahora, enVivo, desfaseFecha) {
     const iParada = vivo ? nucleo.idEstacion.get(String(vivo.paradaId)) : undefined;
     const posActual = iParada === undefined ? undefined : pos.get(iParada);
     const retraso = retrasoDe(vivo);
-    const horas = horasDelViaje(viaje, desfaseFecha);
+    const { horas, llegadas } = horasDelViaje(viaje, desfaseFecha);
 
     for (let k = 0; k < patron.length - 1; k++) {
       if (posActual !== undefined && posActual > k) continue;
       const sale = horas[k] + retraso;
       if (sale < desde || sale > hasta) continue;
       const lista = salidas.get(patron[k]) || [];
-      lista.push({ tripId, iLinea, iPatron, patron, horas, retraso, vivo, k, sale });
+      lista.push({ tripId, iLinea, iPatron, patron, horas, llegadas, retraso, vivo, k, sale });
       salidas.set(patron[k], lista);
     }
   }
@@ -247,7 +267,7 @@ function mejorRecorrido(primero, d, salidas, tramosMax) {
     camino.push(entrada);
     for (let k2 = r.k + 1; k2 < r.patron.length; k2++) {
       const t = r.patron[k2];
-      const llegada = r.horas[k2] + r.retraso;
+      const llegada = r.llegadas[k2] + r.retraso;
       if (t === d) {
         registrar(llegada, t);
         break; // no hace falta seguir el tren más allá del destino
@@ -280,7 +300,7 @@ function opcionDeRecorrido(nucleo, recorrido, ahora) {
     const { r } = e;
     return {
       tripId: r.tripId,
-      numeroTren: numeroDesdeTrip(r.tripId),
+      numeroTren: numeroTren(r.tripId),
       linea: datosLinea(nucleo, r.iLinea),
       haciaNombre: nucleo.estaciones[r.patron[r.patron.length - 1]][1],
       sale: minutosAHora(r.sale - r.retraso),

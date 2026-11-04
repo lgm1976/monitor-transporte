@@ -18,6 +18,8 @@ import {
   textoFaltan, textoDuracion, TRANSBORDO_MIN,
 } from './trayectos.js';
 import { AlmacenHorariosCercanias } from '../fuentes/almacenHorariosCercanias.js';
+import { conMediaDistancia } from './estacion.js';
+import { HORARIO_LARGA_DISTANCIA } from './horasParada.js';
 
 const CLAVE_GUARDADO = 'monitor-transporte:trayecto';
 /** Cada cuánto se recalcula la cuenta atrás aunque no lleguen datos nuevos */
@@ -138,11 +140,27 @@ export class PanelTrayecto {
       return;
     }
     this.nucleo = nucleo;
+    this.red = nucleo; // hasta que lleguen los Media Distancia, solo Cercanías
     this.nombreNucleo = entrada.nucleo;
     this.estaciones = estacionesOrdenadas(this.nucleo);
     this.elLista.innerHTML = this.estaciones.map((e) => `<option value="${escaparHtml(e.nombre)}"></option>`).join('');
     this._pintarCampos();
     this._cambio();
+    // Los Media Distancia que paran en el núcleo para los transbordos: se cargan sin bloquear la pantalla
+    this._redParaTransbordos(nucleo).then((red) => {
+      if (this.nucleo !== nucleo) return;
+      this.red = red;
+      this._cambio();
+    });
+  }
+
+  /** Red para planificar transbordos: el núcleo más los Media Distancia que paran en él (sin ellos si no se pueden cargar) */
+  async _redParaTransbordos(nucleo) {
+    try {
+      return conMediaDistancia(nucleo, await this.horarios.cargar(HORARIO_LARGA_DISTANCIA));
+    } catch {
+      return nucleo;
+    }
   }
 
   /** Traduce el texto escrito a una estación (exacto o, si no, la única que lo contenga) */
@@ -328,7 +346,7 @@ export class PanelTrayecto {
     const enVivo = new Map(this.vehiculos.filter((v) => v.tripId && !v.segunHorario).map((v) => [v.tripId, v]));
     const ahoraMs = Date.now();
     const trenes = proximosTrenes(this.nucleo, desde, hasta, ahoraMs, enVivo);
-    const combinaciones = proximosCombinados(this.nucleo, desde, hasta, ahoraMs, enVivo, { maxTransbordos: MAX_TRANSBORDOS, cuantos: 3 });
+    const combinaciones = proximosCombinados(this.red ?? this.nucleo, desde, hasta, ahoraMs, enVivo, { maxTransbordos: MAX_TRANSBORDOS, cuantos: 3 });
 
     // Sin ningún tren directo posible: solo combinaciones con transbordos
     if (lineas.length === 0) {

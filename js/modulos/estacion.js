@@ -18,7 +18,9 @@
  */
 
 import { momentoMadrid, minutosAHora } from './horario.js';
-import { numeroDesdeTrip, proximosTrenes, proximosConTransbordo, textoFaltan, prepararNucleo } from './trayectos.js';
+import { numeroTren, proximosTrenes, proximosConTransbordo, textoFaltan, prepararNucleo } from './trayectos.js';
+
+export { numeroTren };
 
 /** Margen para seguir mostrando un tren que está saliendo ahora mismo (min) */
 const MARGEN_SALIDA_MIN = 1;
@@ -71,14 +73,6 @@ function datosLinea(nucleo, iLinea) {
  *   AV/LD/MD    0019012026-11-03   → 00190 (cinco cifras + variante + fecha)
  *   OUIGO       6610-2026-11-02    → 6610 (el que monta horarioDesdeOuigo)
  */
-export function numeroTren(tripId) {
-  const cercanias = numeroDesdeTrip(tripId);
-  if (cercanias) return cercanias;
-  const ld = /^(\d{5})\d\d{4}-\d\d-\d\d$/.exec(String(tripId));
-  if (ld) return ld[1];
-  const ouigo = /^(\d{3,6})-\d{4}-\d\d-\d\d$/.exec(String(tripId));
-  return ouigo ? ouigo[1] : null;
-}
 
 /**
  * Convierte el horario de OUIGO (data/horarios/ouigo.json: viajes con
@@ -161,6 +155,32 @@ export function combinarHorarios(horarios, nombre = NOMBRE_LARGA_DISTANCIA) {
   const viajesPorEstacion = new Array(estaciones.length).fill(0);
   for (const v of viajes) for (const e of new Set(patrones[v[3]])) viajesPorEstacion[e]++;
   return { ...prepararNucleo({ nucleo: nombre, fechas, lineas, estaciones, patrones, viajes }), largaDistancia: true, viajesPorEstacion };
+}
+
+/** Servicios de larga distancia que también sirven para hacer transbordos en «Próximo tren» */
+export const SERVICIOS_TRANSBORDO = ['Media Distancia'];
+
+/**
+ * Red para planificar trayectos con transbordo: el horario del núcleo de
+ * Cercanías y los trenes de `servicios` de larga distancia (`ldRaw`, el
+ * horario crudo de data/horarios/ld.json) que paran en alguna de sus
+ * estaciones. Las estaciones con el mismo código se unen.
+ *
+ * Los trenes de larga distancia van en `viajesTransbordo`, aparte de los del
+ * núcleo (`viajes`): «Próximo tren» los usa para hacer el cambio, pero no los
+ * muestra como directos.
+ */
+export function conMediaDistancia(nucleo, ldRaw, servicios = SERVICIOS_TRANSBORDO) {
+  if (!nucleo?.viajes || !ldRaw?.viajes) return nucleo;
+  const enNucleo = new Set(nucleo.estaciones.map(([id]) => String(id)));
+  const lineasElegidas = new Set(ldRaw.lineas.flatMap((l, i) => (servicios.includes(l[0]) ? [i] : [])));
+  const viajes = ldRaw.viajes.filter((v) => lineasElegidas.has(v[2])
+    && ldRaw.patrones[v[3]].some((e) => enNucleo.has(String(ldRaw.estaciones[e][0]))));
+  if (!viajes.length) return nucleo;
+  // combinarHorarios pone primero los viajes del núcleo y después los de larga distancia
+  const red = combinarHorarios([nucleo, { ...ldRaw, viajes }], nucleo.nucleo);
+  const n = nucleo.viajes.length;
+  return { ...red, viajes: red.viajes.slice(0, n), viajesTransbordo: red.viajes.slice(n) };
 }
 
 /** Coordenadas y nombre de una estación del núcleo ({id, nombre, lat, lon}) o null */
