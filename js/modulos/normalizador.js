@@ -108,9 +108,15 @@ function proximaLlegadaDeTripUpdate(tripUpdate, desfaseSeg = 0) {
 /**
  * Construye un índice trip_id → {retrasoSeg, cancelado, proximaLlegada} a partir de uno
  * o varios feeds de TripUpdates (o de un feed mixto).
+ *
+ * Un viaje cuya primera parada ya pasó hace más de `obsoletoSeg` se considera
+ * obsoleto (Renfe deja viajes fantasma con paradas saltadas y un retraso que
+ * ya no corresponde): su retraso se descarta (null) en lugar de mostrarse.
  * @param {object[]} feeds
+ * @param {number} [opciones.ahoraSeg] instante actual (Unix, s)
+ * @param {number} [opciones.obsoletoSeg=900] antigüedad a partir de la que un viaje es obsoleto
  */
-export function indexarActualizacionesViaje(feeds, { desfaseSeg = 0 } = {}) {
+export function indexarActualizacionesViaje(feeds, { desfaseSeg = 0, ahoraSeg = Date.now() / 1000, obsoletoSeg = 900 } = {}) {
   const indice = new Map();
   for (const feed of feeds.filter(Boolean)) {
     for (const entidad of campo(feed, 'entity') || []) {
@@ -119,10 +125,12 @@ export function indexarActualizacionesViaje(feeds, { desfaseSeg = 0 } = {}) {
       const trip = campo(tu, 'trip') || {};
       const tripId = campo(trip, 'trip_id');
       if (!tripId) continue;
+      const proximaLlegada = proximaLlegadaDeTripUpdate(tu, desfaseSeg);
+      const obsoleto = proximaLlegada !== null && proximaLlegada.tiempo < ahoraSeg - obsoletoSeg;
       indice.set(String(tripId), {
-        retrasoSeg: retrasoDeTripUpdate(tu),
+        retrasoSeg: obsoleto ? null : retrasoDeTripUpdate(tu),
         cancelado: estaCancelado(trip),
-        proximaLlegada: proximaLlegadaDeTripUpdate(tu, desfaseSeg),
+        proximaLlegada,
       });
     }
   }

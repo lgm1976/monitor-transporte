@@ -41,6 +41,15 @@
   },
   "versiones": [
     {
+      "version": "1.21",
+      "fecha": "2026-11-06",
+      "titulo": "Retrasos de viajes obsoletos descartados",
+      "cambios": [
+        "Si Renfe publica un retraso para un tren cuya parada ya pasó hace más de 15 minutos, la web ya no lo muestra como retraso, para no enseñar datos que no corresponden a ese tren.",
+        "Los retrasos del resto de trenes no cambian."
+      ]
+    },
+    {
       "version": "1.20",
       "fecha": "2026-11-06",
       "titulo": "Avisos de servicio en el mapa, en favoritos y en Próximo tren",

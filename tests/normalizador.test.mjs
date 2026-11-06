@@ -99,3 +99,20 @@ test('detección del desfase de una hora en las marcas de tiempo', async () => {
   assert.equal(detectarDesfaseHorario([ahora - 4260], ahora), 3600); // previsiones LD observadas
   assert.equal(detectarDesfaseHorario([], ahora), 0);
 });
+
+test('un viaje con la primera parada ya pasada hace mucho no aporta retraso', () => {
+  const ahoraSeg = 1_800_000_000;
+  const feed = {
+    entity: [
+      // Viaje fantasma: su hora de parada es de hace 2 horas y trae un retraso de 141 min
+      { id: 'a', trip_update: { trip: { trip_id: 'FANTASMA' }, delay: 8460,
+        stop_time_update: [{ stop_id: '35606', arrival: { time: ahoraSeg - 7200, delay: 8460 } }] } },
+      // Viaje normal: llega dentro de unos minutos con 2 min de retraso
+      { id: 'b', trip_update: { trip: { trip_id: 'NORMAL' }, delay: 120,
+        stop_time_update: [{ stop_id: '17000', arrival: { time: ahoraSeg + 240, delay: 120 } }] } },
+    ],
+  };
+  const indice = indexarActualizacionesViaje([feed], { ahoraSeg });
+  assert.equal(indice.get('FANTASMA').retrasoSeg, null);
+  assert.equal(indice.get('NORMAL').retrasoSeg, 120);
+});
