@@ -19,6 +19,7 @@ import {
 } from './trayectos.js';
 import { AlmacenHorariosCercanias } from '../fuentes/almacenHorariosCercanias.js';
 import { conMediaDistancia } from './estacion.js';
+import { avisosDeLineas } from './avisos.js';
 import { HORARIO_LARGA_DISTANCIA } from './horasParada.js';
 
 const CLAVE_GUARDADO = 'monitor-transporte:trayecto';
@@ -48,7 +49,10 @@ export class PanelTrayecto {
    * @param {{red?:string, desde?:string, hasta?:string}} [opciones.inicial] de la URL
    * @param {import('./estacion.js').Favoritos} [opciones.favoritos] para la estrella del trayecto
    */
-  constructor({ alVerEnMapa, alCambiar, inicial = {}, favoritos = null }) {
+  constructor({ alVerEnMapa, alCambiar, alVerAvisos = null, inicial = {}, favoritos = null }) {
+    this.alVerAvisos = alVerAvisos;
+    /** Avisos de servicio vigentes (vacío si el feed está caducado) */
+    this.avisos = [];
     this.alVerEnMapa = alVerEnMapa;
     this.alCambiar = alCambiar;
     this.favoritos = favoritos;
@@ -69,6 +73,11 @@ export class PanelTrayecto {
     this.elHasta = document.getElementById('trayecto-hasta');
     this.elLista = document.getElementById('lista-estaciones');
     this.elResultados = document.getElementById('trayecto-resultados');
+    this.elAviso = document.getElementById('trayecto-avisos');
+    this.elAviso.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-ver-avisos]');
+      if (b) this.alVerAvisos?.({ nucleo: this.nucleo?.nucleo ?? '', linea: b.dataset.linea || '' });
+    });
     this.elLineas = document.getElementById('trayecto-lineas');
     this.elFavorito = document.getElementById('trayecto-favorito');
     this.elFavorito?.addEventListener('click', () => this._alternarFavorito());
@@ -228,7 +237,32 @@ export class PanelTrayecto {
     if (this.estado.red && this.estado.desde && this.estado.hasta) guardar(this.estado);
     this._pintarFavorito();
     this._pintarResultados();
+    this._pintarAvisos();
     this.alCambiar?.();
+  }
+
+  /** Nuevos datos de FuenteAvisos (null mientras se cargan) */
+  actualizarAvisos(datos) {
+    this.avisos = datos && !datos.caducado ? datos.avisos : [];
+    this._pintarAvisos();
+  }
+
+  /** Aviso de servicio de las líneas del trayecto directo, con botón a la pestaña «Avisos» */
+  _pintarAvisos() {
+    const { desde, hasta } = this.estado;
+    const lineas = this.nucleo && desde && hasta
+      ? lineasDelTrayecto(this.nucleo, desde, hasta).map((l) => l.nombre)
+      : [];
+    const conAviso = lineas.filter((l) => avisosDeLineas(this.avisos, { nucleo: this.nucleo.nucleo, lineas: [l] }).length);
+    if (!conAviso.length) {
+      this.elAviso.hidden = true;
+      this.elAviso.innerHTML = '';
+      return;
+    }
+    const n = avisosDeLineas(this.avisos, { nucleo: this.nucleo.nucleo, lineas: conAviso }).length;
+    this.elAviso.hidden = false;
+    this.elAviso.innerHTML = `<p>⚠ ${n} ${n === 1 ? 'aviso de servicio' : 'avisos de servicio'} en ${conAviso.map(escaparHtml).join(', ')}.</p>
+      <button type="button" class="boton-avisos" data-ver-avisos data-linea="${escaparHtml(conAviso[0])}">Ver avisos</button>`;
   }
 
   /** Llamado en cada lectura de datos: refresca retrasos y cuenta atrás */

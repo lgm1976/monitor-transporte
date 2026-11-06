@@ -65,6 +65,8 @@ export class CapaEstaciones {
     this.capa = L.layerGroup().addTo(mapa);
     this.marca = null;
     this.pintadas = '';
+    /** Ids de las estaciones con avisos de accesibilidad vigentes */
+    this.accesibilidad = new Set();
     const ld = CONFIG.estacionesMapa?.largaDistancia ?? {};
     this.ldActivas = ld.activas !== false;
     this.umbralesLd = ld.umbrales ?? UMBRALES_LARGA_DISTANCIA;
@@ -73,6 +75,13 @@ export class CapaEstaciones {
       this.indice = indice;
       this.actualizar();
     }).catch(() => { /* sin índice no hay estaciones en el mapa; el resto sigue */ });
+  }
+
+  /** Señala en ámbar las estaciones con avisos de accesibilidad (ids) y repinta */
+  marcarAccesibilidad(ids) {
+    this.accesibilidad = ids;
+    this.pintadas = '';
+    this.actualizar();
   }
 
   /** Dibuja las estaciones de la vista (descargando los horarios que falten) */
@@ -122,19 +131,20 @@ export class CapaEstaciones {
       }
     }
 
-    const firma = visibles.map((e) => `${e.id}${e.red}`).join(',');
+    const firma = visibles.map((e) => `${e.id}${e.red}${this.accesibilidad.has(String(e.id)) ? '!' : ''}`).join(',');
     if (firma === this.pintadas) return;
     this.pintadas = firma;
     this.capa.clearLayers();
     // Las de larga distancia, encima de las de Cercanías
     visibles.sort((a, b) => Number(Boolean(a.ld)) - Number(Boolean(b.ld)));
     for (const e of visibles) {
+      const acc = this.accesibilidad.has(String(e.id));
       const m = L.circleMarker([e.lat, e.lon], e.ld
         ? {
           renderer: this.renderer,
           radius: e.principal ? 5.5 : 4.5,
-          weight: 2,
-          color: '#ffffff',
+          weight: acc ? 4 : 2,
+          color: acc ? '#d97706' : '#ffffff',
           fillColor: '#1e293b',
           fillOpacity: 1,
           bubblingMouseEvents: false,
@@ -142,14 +152,14 @@ export class CapaEstaciones {
         : {
           renderer: this.renderer,
           radius: 4.5,
-          weight: 2,
-          color: '#334155',
+          weight: acc ? 4 : 2,
+          color: acc ? '#d97706' : '#334155',
           fillColor: '#ffffff',
           fillOpacity: 1,
           bubblingMouseEvents: false,
         });
       const red = e.ld && e.nucleo ? `Larga distancia y Cercanías ${escaparHtml(e.nucleo)}` : e.ld ? 'Larga y media distancia' : `Cercanías ${escaparHtml(e.nucleo)}`;
-      m.bindTooltip(`${escaparHtml(e.nombre)}<small>${red} · toca para ver sus trenes</small>`, {
+      m.bindTooltip(`${escaparHtml(e.nombre)}<small>${red}${acc ? ' · ⚠ aviso de accesibilidad' : ''} · toca para ver sus trenes</small>`, {
         direction: 'top', offset: [0, -5], className: 'tooltip-estacion', opacity: 1,
       });
       m.on('click', () => this.alElegir({ red: e.red, estacion: e.id }));

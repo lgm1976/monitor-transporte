@@ -60,10 +60,10 @@ test('resumen de puntualidad', () => {
 
 test('estado en la URL', () => {
   assert.deepEqual(leerEstadoUrl('?modo=real&tren=15868&nucleo=Madrid'), {
-    modo: 'real', tren: '15868', servicio: '', nucleo: 'Madrid', red: '', desde: '', hasta: '', estacion: '',
+    modo: 'real', tren: '15868', servicio: '', nucleo: 'Madrid', red: '', desde: '', hasta: '', estacion: '', avisos: '', linea: '',
   });
   assert.deepEqual(leerEstadoUrl('?red=madrid&desde=18002&hasta=70002'), {
-    modo: '', tren: '', servicio: '', nucleo: '', red: 'madrid', desde: '18002', hasta: '70002', estacion: '',
+    modo: '', tren: '', servicio: '', nucleo: '', red: 'madrid', desde: '18002', hasta: '70002', estacion: '', avisos: '', linea: '',
   });
   assert.equal(leerEstadoUrl('?red=madrid&estacion=18000').estacion, '18000');
   assert.equal(

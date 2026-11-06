@@ -9,9 +9,11 @@
  */
 
 import { escaparHtml } from './mapa.js';
-import { resumenFavorito, claveFavorito, vehiculosPorViaje, conMediaDistancia, RED_LARGA_DISTANCIA, NOMBRE_LARGA_DISTANCIA } from './estacion.js';
+import { lineasDeEstacion, resumenFavorito, claveFavorito, vehiculosPorViaje, conMediaDistancia, RED_LARGA_DISTANCIA, NOMBRE_LARGA_DISTANCIA } from './estacion.js';
 import { AlmacenHorariosCercanias } from '../fuentes/almacenHorariosCercanias.js';
 import { HORARIO_LARGA_DISTANCIA } from './horasParada.js';
+import { avisosDeEstacion, avisosDeLineas } from './avisos.js';
+import { lineasDelTrayecto } from './trayectos.js';
 
 const INTERVALO_CUENTA_MS = 20000;
 
@@ -29,6 +31,8 @@ export class PanelFavoritos {
     this.horarios = AlmacenHorariosCercanias.compartido();
     /** núcleo → red para transbordos (el núcleo más Media Distancia y Regionales), como en «Próximo tren» */
     this.redes = new Map();
+    /** Avisos de servicio vigentes (vacío si el feed está caducado) */
+    this.avisos = [];
     this.vehiculos = [];
     this.el = document.getElementById('favoritos-lista');
     this.el.addEventListener('click', (e) => {
@@ -78,6 +82,29 @@ export class PanelFavoritos {
     this.activo = false;
   }
 
+  /** Nuevos datos de FuenteAvisos (null mientras se cargan) */
+  actualizarAvisos(datos) {
+    this.avisos = datos && !datos.caducado ? datos.avisos : [];
+    if (this.activo) this.pintar();
+  }
+
+  /** «⚠ 2 avisos de servicio» que afectan al favorito (la larga distancia no tiene avisos) */
+  _textoAvisos(f, nucleo) {
+    if (f.red === RED_LARGA_DISTANCIA || !nucleo || !this.avisos.length) return '';
+    const n = f.tipo === 'estacion'
+      ? (() => {
+        const lineas = lineasDeEstacion(nucleo, f.estacion, Date.now()).map((l) => l.nombre);
+        const { propios, deLineas } = avisosDeEstacion(this.avisos, { estacion: f.estacion, nucleo: nucleo.nucleo, lineas });
+        return propios.length + deLineas.length;
+      })()
+      : avisosDeLineas(this.avisos, {
+        nucleo: nucleo.nucleo,
+        lineas: lineasDelTrayecto(nucleo, f.desde, f.hasta).map((l) => l.nombre),
+      }).length;
+    if (!n) return '';
+    return `⚠ ${n} ${n === 1 ? 'aviso de servicio' : 'avisos de servicio'}`;
+  }
+
   actualizar(vehiculos) {
     this.vehiculos = vehiculos;
     if (this.activo) this.pintar();
@@ -103,6 +130,7 @@ export class PanelFavoritos {
           ? this.redes.get(f.red)
           : this.horarios.obtenerPreparado(f.red) ?? null;
         const resumen = resumenFavorito(f, nucleo, ahora, enVivo);
+        const textoAvisos = this._textoAvisos(f, nucleo);
         const icono = f.tipo === 'trayecto'
           ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.5 6H15a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h6.5"/></svg>'
           : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="3" width="12" height="14" rx="3"/><path d="M6 11h12M9 21l1.5-4M15 21l-1.5-4"/></svg>';
@@ -114,6 +142,7 @@ export class PanelFavoritos {
               <span class="favorito-nombre">${escaparHtml(f.nombre || clave)}</span>
               <span class="favorito-nucleo">${f.tipo === 'trayecto' ? 'Trayecto' : 'Estación'} · ${f.red === RED_LARGA_DISTANCIA ? NOMBRE_LARGA_DISTANCIA : `Cercanías ${escaparHtml(f.nucleo || f.red)}`}</span>
               <span class="favorito-resumen">${escaparHtml(resumen?.texto ?? 'Cargando horario…')}</span>
+              ${textoAvisos ? `<span class="favorito-avisos">${escaparHtml(textoAvisos)}</span>` : ''}
             </span>
           </button>
           <button type="button" class="favorito-quitar" data-quitar="${escaparHtml(clave)}" title="Quitar de favoritos" aria-label="Quitar ${escaparHtml(f.nombre || '')} de favoritos">

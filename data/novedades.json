@@ -41,6 +41,16 @@
   },
   "versiones": [
     {
+      "version": "1.20",
+      "fecha": "2026-11-06",
+      "titulo": "Avisos de servicio en el mapa, en favoritos y en Próximo tren",
+      "cambios": [
+        "Las estaciones con avisos de accesibilidad vigentes se marcan en ámbar en el mapa, con su aviso al pasar el ratón.",
+        "Los favoritos y «Próximo tren» indican cuántos avisos de servicio afectan a sus líneas, con un botón para verlos en la pestaña «Avisos».",
+        "La pestaña «Avisos» se puede compartir con un enlace que abre su núcleo y su línea."
+      ]
+    },
+    {
       "version": "1.19",
       "fecha": "2026-11-06",
       "titulo": "Primer tren de mañana cuando hoy ya no quedan",

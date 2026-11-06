@@ -4,6 +4,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { avisosDeLineas, estacionesConAccesibilidad } from '../js/modulos/avisos.js';
 
 import {
   lineaDeRuta, baseLinea, limpiarTexto, clasificarAviso, normalizarAvisos, estadoFeed, indexarPorLinea,
@@ -225,4 +226,15 @@ test('fechas y antigüedades legibles', () => {
   assert.equal(textoAntiguedad(5 * 60000), 'hace 5 min');
   assert.equal(textoAntiguedad(3 * 3600000), 'hace 3 h');
   assert.equal(textoAntiguedad(26 * 86400000), 'hace 26 días');
+});
+
+test('avisos de líneas y de accesibilidad para favoritos y el mapa', () => {
+  const avisos = [
+    { categoria: 'incidencia', programado: false, lineas: [{ nombre: 'C4a', nucleo: 'Madrid' }], estaciones: [], nucleos: ['Madrid'] },
+    { categoria: 'accesibilidad', programado: false, lineas: [{ nombre: 'C4', nucleo: 'Madrid' }], estaciones: [{ id: '18000' }], nucleos: ['Madrid'] },
+    { categoria: 'obras', programado: true, lineas: [{ nombre: 'C4', nucleo: 'Madrid' }], estaciones: [], nucleos: ['Madrid'] },
+  ];
+  assert.equal(avisosDeLineas(avisos, { nucleo: 'Madrid', lineas: ['C4'] }).length, 1);
+  assert.equal(avisosDeLineas(avisos, { nucleo: 'Madrid', lineas: ['C3'] }).length, 0);
+  assert.deepEqual([...estacionesConAccesibilidad(avisos)], ['18000']);
 });

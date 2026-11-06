@@ -516,3 +516,6 @@ body[data-siguiendo='true'] .leyenda-mapa { display: none; }
   text-transform: uppercase;
   color: #64748b;
 }
+
+/* Avisos de servicio en los favoritos */
+.favorito-avisos { display: block; font-size: 12px; color: #92400e; }

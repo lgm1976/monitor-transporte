@@ -28,7 +28,7 @@ import { PanelEstacion } from './modulos/panelEstacion.js';
 import { PanelFavoritos } from './modulos/panelFavoritos.js';
 import { PanelAvisos } from './modulos/panelAvisos.js';
 import { PanelInfo } from './modulos/panelInfo.js';
-import { indexarPorLinea, avisosDeTren } from './modulos/avisos.js';
+import { indexarPorLinea, avisosDeTren, estacionesConAccesibilidad } from './modulos/avisos.js';
 import { Favoritos, RED_LARGA_DISTANCIA } from './modulos/estacion.js';
 import { CapaEstaciones } from './modulos/capaEstaciones.js';
 import { slugNucleo } from './modulos/recorrido.js';
@@ -152,6 +152,9 @@ function sincronizarUrl() {
     desde: trayecto.desde ?? '',
     hasta: trayecto.hasta ?? '',
     estacion: estacion.estacion ?? '',
+    // Pestaña «Avisos»: su núcleo (o «todos») y su línea
+    avisos: app.vista === 'avisos' ? (app.panelAvisos.estado.nucleo || 'todos') : '',
+    linea: app.vista === 'avisos' ? app.panelAvisos.estado.linea : '',
   });
   history.replaceState(null, '', href);
 }
@@ -400,6 +403,7 @@ async function leerAvisos() {
     app.indiceAvisos = datos.caducado ? new Map() : indexarPorLinea(datos.avisos);
     app.panelAvisos.actualizar(datos);
     app.estacion.actualizarAvisos(datos);
+    repartirAvisos(datos);
     renderizar();
   } catch (error) {
     console.warn('[avisos]', error);
@@ -417,6 +421,14 @@ function programarAvisos() {
   }, CONFIG.avisos.intervaloSeg * 1000);
 }
 
+/** Lleva los avisos al mapa (estaciones con accesibilidad), a Próximo tren y a los favoritos */
+function repartirAvisos(datos) {
+  const avisos = datos && !datos.caducado ? datos.avisos : [];
+  app.capaEstaciones?.marcarAccesibilidad(estacionesConAccesibilidad(avisos));
+  app.trayecto?.actualizarAvisos(datos);
+  app.panelFavoritos?.actualizarAvisos(datos);
+}
+
 /** Avisos nuevos al cambiar de modo (simulados o reales) */
 function reiniciarAvisos() {
   app.fuenteAvisos = CONFIG.avisos?.activos ? new FuenteAvisos({ modo: app.modo }) : null;
@@ -424,6 +436,7 @@ function reiniciarAvisos() {
   app.indiceAvisos = new Map();
   app.panelAvisos.actualizar(null);
   app.estacion.actualizarAvisos(null);
+  repartirAvisos(null);
   leerAvisos().then(programarAvisos);
 }
 
@@ -684,6 +697,7 @@ async function iniciar() {
   });
   app.favoritos = new Favoritos(almacenLocal());
   app.trayecto = new PanelTrayecto({
+    alVerAvisos: abrirAvisos,
     // «Ver en el mapa» sigue el tren (en el móvil pliega el panel)
     alVerEnMapa: (id) => seguirTren(id),
     alCambiar: sincronizarUrl,
@@ -731,7 +745,10 @@ async function iniciar() {
     $('btn-panel').setAttribute('aria-expanded', 'false');
   }
   // Un enlace con estación abre la pestaña «Estación»; con trayecto, «Próximo tren»
-  if (estadoUrl.estacion) {
+  if (estadoUrl.avisos) {
+    abrirAvisos({ nucleo: estadoUrl.avisos === 'todos' ? '' : estadoUrl.avisos, linea: estadoUrl.linea });
+    plegarPanel(false);
+  } else if (estadoUrl.estacion) {
     cambiarVista('estacion');
     plegarPanel(false);
   } else if (estadoUrl.desde || estadoUrl.hasta || estadoUrl.red) {

@@ -362,3 +362,23 @@ export function buscadorColorLinea(lineasDiccionario = []) {
     return misma ? { ...misma, nombre } : null;
   };
 }
+
+/**
+ * Avisos de servicio (no de accesibilidad ni programados) que afectan a
+ * unas líneas de un núcleo: para el resumen de favoritos y de «Próximo tren».
+ */
+export function avisosDeLineas(avisos, { nucleo, lineas = [] }) {
+  const bases = new Set(lineas.map((l) => baseLinea(l)));
+  return avisos.filter((a) => a.categoria !== 'accesibilidad' && !a.programado
+    && a.lineas.some((l) => l.nucleo === nucleo && bases.has(baseLinea(l.nombre))));
+}
+
+/** Ids de las estaciones con algún aviso de accesibilidad vigente (para señalarlas en el mapa) */
+export function estacionesConAccesibilidad(avisos) {
+  const ids = new Set();
+  for (const a of avisos) {
+    if (a.categoria !== 'accesibilidad' || a.programado) continue;
+    for (const e of a.estaciones) ids.add(String(e.id));
+  }
+  return ids;
+}
