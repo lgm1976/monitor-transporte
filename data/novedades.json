@@ -41,6 +41,15 @@
   },
   "versiones": [
     {
+      "version": "1.17",
+      "fecha": "2026-11-06",
+      "titulo": "Regionales en los transbordos y favoritos con transbordo",
+      "cambios": [
+        "En «Próximo tren», los trayectos con transbordo también pueden usar trenes Regionales y Regionales Exprés para hacer el cambio, además de Cercanías y Media Distancia.",
+        "Los favoritos de trayecto calculan su próximo tren con los mismos transbordos que la pestaña «Próximo tren», así que el resumen de la pestaña ★ coincide con lo que verás al abrirlo."
+      ]
+    },
+    {
       "version": "1.16",
       "fecha": "2026-11-04",
       "titulo": "Media Distancia en los trayectos con transbordo",

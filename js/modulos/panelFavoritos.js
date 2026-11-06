@@ -9,8 +9,9 @@
  */
 
 import { escaparHtml } from './mapa.js';
-import { resumenFavorito, claveFavorito, vehiculosPorViaje, RED_LARGA_DISTANCIA, NOMBRE_LARGA_DISTANCIA } from './estacion.js';
+import { resumenFavorito, claveFavorito, vehiculosPorViaje, conMediaDistancia, RED_LARGA_DISTANCIA, NOMBRE_LARGA_DISTANCIA } from './estacion.js';
 import { AlmacenHorariosCercanias } from '../fuentes/almacenHorariosCercanias.js';
+import { HORARIO_LARGA_DISTANCIA } from './horasParada.js';
 
 const INTERVALO_CUENTA_MS = 20000;
 
@@ -26,6 +27,8 @@ export class PanelFavoritos {
     this.alAbrir = alAbrir;
     this.alCambiar = alCambiar;
     this.horarios = AlmacenHorariosCercanias.compartido();
+    /** núcleo → red para transbordos (el núcleo más Media Distancia y Regionales), como en «Próximo tren» */
+    this.redes = new Map();
     this.vehiculos = [];
     this.el = document.getElementById('favoritos-lista');
     this.el.addEventListener('click', (e) => {
@@ -48,9 +51,27 @@ export class PanelFavoritos {
   activar() {
     this.activo = true;
     this.pintar();
-    // Descarga los núcleos de los favoritos y repinta cuando lleguen
+    // Descarga los núcleos de los favoritos (y su red de transbordos) y repinta cuando lleguen
     const slugs = [...new Set(this.favoritos.lista.map((f) => f.red))];
-    Promise.all(slugs.map((s) => this.horarios.cargarPreparado(s))).then(() => this.activo && this.pintar());
+    Promise.all(slugs.map((s) => this._cargarRed(s))).then(() => this.activo && this.pintar());
+  }
+
+  /**
+   * Prepara la red con la que se calculan los trayectos con transbordo de un
+   * favorito: el núcleo más los Media Distancia y Regionales que paran en él.
+   * Si la larga distancia no carga, se queda el núcleo solo.
+   */
+  async _cargarRed(slug) {
+    if (slug === RED_LARGA_DISTANCIA) return this.horarios.cargarPreparado(slug);
+    const nucleo = await this.horarios.cargarPreparado(slug);
+    let ldRaw = null;
+    try {
+      ldRaw = await this.horarios.cargar(HORARIO_LARGA_DISTANCIA);
+    } catch {
+      ldRaw = null;
+    }
+    this.redes.set(slug, conMediaDistancia(nucleo, ldRaw));
+    return this.redes.get(slug);
   }
 
   desactivar() {
@@ -77,7 +98,11 @@ export class PanelFavoritos {
     this.el.innerHTML = lista
       .map((f) => {
         const clave = claveFavorito(f);
-        const resumen = resumenFavorito(f, this.horarios.obtenerPreparado(f.red) ?? null, ahora, enVivo);
+        // Las estaciones usan el horario del núcleo; los trayectos, la red con transbordos
+        const nucleo = f.tipo === 'trayecto' && this.redes.has(f.red)
+          ? this.redes.get(f.red)
+          : this.horarios.obtenerPreparado(f.red) ?? null;
+        const resumen = resumenFavorito(f, nucleo, ahora, enVivo);
         const icono = f.tipo === 'trayecto'
           ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.5 6H15a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h6.5"/></svg>'
           : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="3" width="12" height="14" rx="3"/><path d="M6 11h12M9 21l1.5-4M15 21l-1.5-4"/></svg>';

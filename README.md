@@ -13,7 +13,7 @@ Aplicación web estática que muestra en un mapa interactivo la posición y la p
 - **Próximo tren** entre dos estaciones de Cercanías, con cuenta atrás y retraso en vivo
 - **Panel de estación** de Cercanías y de **larga distancia** (próximos trenes en los dos sentidos, con OUIGO según horario) y **favoritos** de estaciones y trayectos; las estaciones se ven en el mapa (las de larga distancia desde lejos, las de Cercanías al acercarse)
 - **Avisos de servicio** de Renfe Cercanías (incidencias, obras y accesibilidad) en su pestaña, en la ficha de cada tren y en el panel de estación
-- **Arranque en tu zona**: si lo permites, el mapa se centra en tu posición al abrir la web (si hay trenes cerca), con el botón «Mi zona» para volver a ella cuando quieras (versión actual: **1.16**)
+- **Arranque en tu zona**: si lo permites, el mapa se centra en tu posición al abrir la web (si hay trenes cerca), con el botón «Mi zona» para volver a ella cuando quieras (versión actual: **1.17**)
 - **Información y novedades**: botón de la cabecera con la descripción del proyecto y lo nuevo de cada versión
 - Colores y umbrales de retraso definidos en `data/estilo_mapa.json`
 
@@ -309,7 +309,7 @@ Cada mejora que se note al usar la web **sube la versión y añade su entrada** 
 
 Las correcciones internas, los cambios de datos (la Action nocturna) y las mejoras que no cambian lo que se ve no llevan versión.
 
-Historial reconstruido a partir de los commits: 1.0 a 1.3 el 01/11/2026 (primera versión, fichas legibles y movimiento continuo, filtros y seguir un tren, OUIGO y «Próximo tren»), 1.4 a 1.11 el 02/11/2026 (trenes por la vía y recorrido, movimiento fluido, panel de estación y favoritos, avisos, grupos de trenes e información, el ajuste del movimiento en hora punta, las horas de paso en larga distancia y el panel de estación de larga distancia), 1.12 el 04/11/2026 (arranque en tu zona y botón «Mi zona»), 1.13 el 04/11/2026 (trayectos con dos transbordos y combinaciones que llegan antes que el directo), 1.14 el 04/11/2026 (ficha y listado desde abajo en el móvil), 1.15 el 04/11/2026 (trenes de Cercanías que no casan con su horario) y 1.16 el 04/11/2026 (Media Distancia en los trayectos con transbordo).
+Historial reconstruido a partir de los commits: 1.0 a 1.3 el 01/11/2026 (primera versión, fichas legibles y movimiento continuo, filtros y seguir un tren, OUIGO y «Próximo tren»), 1.4 a 1.11 el 02/11/2026 (trenes por la vía y recorrido, movimiento fluido, panel de estación y favoritos, avisos, grupos de trenes e información, el ajuste del movimiento en hora punta, las horas de paso en larga distancia y el panel de estación de larga distancia), 1.12 el 04/11/2026 (arranque en tu zona y botón «Mi zona»), 1.13 el 04/11/2026 (trayectos con dos transbordos y combinaciones que llegan antes que el directo), 1.14 el 04/11/2026 (ficha y listado desde abajo en el móvil), 1.15 el 04/11/2026 (trenes de Cercanías que no casan con su horario) 1.16 el 04/11/2026 (Media Distancia en los trayectos con transbordo) y 1.17 el 06/11/2026 (Regionales en los transbordos y favoritos de trayecto con transbordo).
 
 ## Horas de paso en larga distancia
 

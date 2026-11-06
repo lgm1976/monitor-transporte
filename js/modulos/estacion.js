@@ -157,8 +157,11 @@ export function combinarHorarios(horarios, nombre = NOMBRE_LARGA_DISTANCIA) {
   return { ...prepararNucleo({ nucleo: nombre, fechas, lineas, estaciones, patrones, viajes }), largaDistancia: true, viajesPorEstacion };
 }
 
-/** Servicios de larga distancia que también sirven para hacer transbordos en «Próximo tren» */
-export const SERVICIOS_TRANSBORDO = ['Media Distancia'];
+/**
+ * Servicios de larga distancia que también sirven para hacer transbordos en
+ * «Próximo tren» y en los favoritos de trayecto (Media Distancia y Regionales)
+ */
+export const SERVICIOS_TRANSBORDO = ['Media Distancia', 'Regional', 'Regional Exprés'];
 
 /**
  * Red para planificar trayectos con transbordo: el horario del núcleo de
