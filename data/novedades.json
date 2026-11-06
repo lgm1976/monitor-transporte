@@ -41,6 +41,15 @@
   },
   "versiones": [
     {
+      "version": "1.18",
+      "fecha": "2026-11-06",
+      "titulo": "Todos los trenes del día en cada estación",
+      "cambios": [
+        "En el panel de estación, el botón «Ver todo el día» muestra todos los trenes de hoy que paran allí, también los que ya han pasado (aparecen atenuados), en lugar de solo los próximos.",
+        "Al tocar una parada del recorrido de un tren seguido, se abre el panel de esa estación con este botón al alcance."
+      ]
+    },
+    {
       "version": "1.17",
       "fecha": "2026-11-06",
       "titulo": "Regionales en los transbordos y favoritos con transbordo",

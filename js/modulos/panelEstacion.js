@@ -97,9 +97,11 @@ export class PanelEstacion {
       red: inicial.red || guardado.red || '',
       estacion: inicial.estacion || (inicial.red ? '' : guardado.estacion) || '',
       linea: '',
+      todoElDia: false,
     };
 
     this.elRed = document.getElementById('estacion-red');
+    this.elTodoDia = document.getElementById('estacion-todo-dia');
     this.elNombre = document.getElementById('estacion-nombre');
     this.elLista = document.getElementById('lista-estaciones-estacion');
     this.elLineas = document.getElementById('estacion-lineas');
@@ -129,6 +131,12 @@ export class PanelEstacion {
       if (!b) return;
       this.estado.linea = this.estado.linea === b.dataset.linea ? '' : b.dataset.linea;
       this._pintarLineas();
+      this._pintarResultados();
+    });
+    // «Ver todo el día»: todos los trenes de hoy, pasados incluidos, en lugar de los próximos
+    this.elTodoDia.addEventListener('click', () => {
+      this.estado.todoElDia = !this.estado.todoElDia;
+      this._pintarTodoDia();
       this._pintarResultados();
     });
     this.elResultados.addEventListener('click', (e) => {
@@ -395,8 +403,16 @@ export class PanelEstacion {
       .join('')}`;
   }
 
+  /** Botón «Ver todo el día»: visible con una estación elegida */
+  _pintarTodoDia() {
+    this.elTodoDia.hidden = !this.estado.estacion;
+    this.elTodoDia.setAttribute('aria-pressed', String(this.estado.todoElDia));
+    this.elTodoDia.textContent = this.estado.todoElDia ? 'Ver próximos trenes' : 'Ver todo el día';
+  }
+
   _pintarResultados() {
     if (!this.nucleo) return;
+    this._pintarTodoDia();
     if (!this.estado.estacion) {
       this.elResultados.innerHTML = this.esLargaDistancia
         ? '<p class="trayecto-vacio">Elige una estación para ver los próximos AVE, Alvia, Media Distancia y OUIGO que pasan por ella. También puedes tocarla en el mapa: las estaciones de larga distancia son los puntos oscuros.</p>'
@@ -404,14 +420,20 @@ export class PanelEstacion {
       return;
     }
     const enVivo = vehiculosPorViaje(this.vehiculos);
-    const trenes = trenesEnEstacion(this.nucleo, this.estado.estacion, Date.now(), enVivo, { linea: this.estado.linea });
+    const todo = this.estado.todoElDia;
+    const trenes = trenesEnEstacion(this.nucleo, this.estado.estacion, Date.now(), enVivo, {
+      linea: this.estado.linea,
+      todoElDia: todo,
+      cuantos: todo ? Infinity : 12,
+    });
     if (trenes.length === 0) {
-      this.elResultados.innerHTML = `<p class="trayecto-vacio">No pasa ningún tren${this.estado.linea ? ` de la ${escaparHtml(this.estado.linea)}` : ''} en las próximas horas.</p>`;
+      const cuando = todo ? 'hoy' : 'en las próximas horas';
+      this.elResultados.innerHTML = `<p class="trayecto-vacio">No pasa ningún tren${this.estado.linea ? ` de la ${escaparHtml(this.estado.linea)}` : ''} ${cuando}.</p>`;
       return;
     }
     this.elResultados.innerHTML = trenes
       .map((t) => {
-        const faltan = t.cancelado ? '—' : t.enAnden ? textoEnEstacion(this.nucleo) : textoFaltan(t.faltanMin);
+        const faltan = t.cancelado ? '—' : t.enAnden ? textoEnEstacion(this.nucleo) : t.pasado ? 'ya pasó' : textoFaltan(t.faltanMin);
         const hora = t.retrasoMin > 0 && !t.cancelado ? `<s>${t.hora}</s> <strong>${t.horaPrevista}</strong>` : `<strong>${t.hora}</strong>`;
         const destino = t.termina
           ? `Termina aquí · viene de ${escaparHtml(t.desdeNombre)}`
@@ -423,7 +445,7 @@ export class PanelEstacion {
         const extra = [llegada, t.anden ? `andén ${escaparHtml(t.anden)}` : null, t.numeroTren ? `tren ${escaparHtml(t.numeroTren)}` : null]
           .filter(Boolean).join(' · ');
         return `
-        <li class="trayecto-tren${t.cancelado ? ' es-cancelado' : ''}${t.termina ? ' es-llegada' : ''}">
+        <li class="trayecto-tren${t.cancelado ? ' es-cancelado' : ''}${t.termina ? ' es-llegada' : ''}${t.pasado ? ' es-pasado' : ''}">
           <div class="trayecto-fila">
             ${pildoraLinea(t.linea)}
             <span class="trayecto-faltan">${faltan}</span>

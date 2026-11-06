@@ -448,6 +448,11 @@ body[data-siguiendo='true'] .leyenda-mapa { display: none; }
   font-size: 12px; font-weight: 600; text-align: left;
 }
 .boton-avisos:hover { background: #fef3c7; }
+/* «Ver todo el día» del panel de estación y trenes ya pasados */
+.boton-todo-dia { margin-top: 4px; font-size: 12px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 2px 8px; background: #fff; color: #334155; }
+.boton-todo-dia:hover { background: #f1f5f9; }
+.boton-todo-dia[aria-pressed='true'] { background: #0f172a; color: #fff; border-color: #0f172a; }
+.trayecto-tren.es-pasado { opacity: 0.55; }
 .boton-avisos svg { flex-shrink: 0; }
 .boton-avisos .flecha { margin-left: auto; }
 .estacion-avisos { padding: 8px 16px; border-bottom: 1px solid #f1f5f9; background: #fffdf5; }

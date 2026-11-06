@@ -230,10 +230,12 @@ export function lineasDeEstacion(nucleo, estacionId, ahoraMs = null) {
  * @param {string} estacionId stop_id
  * @param {number} ahoraMs
  * @param {Map<string, object>} [enVivo] tripId → vehículo del feed
- * @param {{cuantos?:number, linea?:string}} [opciones] `linea`: solo esa línea
+ * @param {{cuantos?:number, linea?:string, todoElDia?:boolean}} [opciones]
+ *   `linea`: solo esa línea. `todoElDia`: todos los trenes de hoy (de 00:00 a
+ *   24:00) en lugar de los próximos, pasados incluidos (marcados `pasado`)
  * @returns {object[]} ordenados por hora prevista de paso
  */
-export function trenesEnEstacion(nucleo, estacionId, ahoraMs, enVivo = new Map(), { cuantos = 12, linea = '' } = {}) {
+export function trenesEnEstacion(nucleo, estacionId, ahoraMs, enVivo = new Map(), { cuantos = 12, linea = '', todoElDia = false } = {}) {
   const e = nucleo.idEstacion.get(String(estacionId));
   if (e === undefined) return [];
   const { fecha, minutos: ahora } = momentoMadrid(ahoraMs);
@@ -249,7 +251,8 @@ export function trenesEnEstacion(nucleo, estacionId, ahoraMs, enVivo = new Map()
 
     let tPaso = desfaseFecha[iFecha] + salida;
     for (let k = 0; k < ie; k++) tPaso += tramos[k];
-    if (tPaso < ahora - 180 || tPaso > ahora + HORIZONTE_MIN) continue;
+    // Hoy: el desfase de la fecha de hoy es 0, así que su día va de 0 a 1440
+    if (todoElDia ? tPaso < 0 || tPaso >= 1440 : tPaso < ahora - 180 || tPaso > ahora + HORIZONTE_MIN) continue;
 
     // Los trenes según horario (OUIGO) no traen retraso ni posición real:
     // del vehículo solo se usa su id para «Ver en el mapa»
@@ -260,12 +263,13 @@ export function trenesEnEstacion(nucleo, estacionId, ahoraMs, enVivo = new Map()
     if (vivo) {
       const iParada = nucleo.idEstacion.get(String(vivo.paradaId));
       const posActual = iParada === undefined ? undefined : pos.get(iParada);
-      if (posActual !== undefined && posActual > ie) continue; // ya pasó por aquí
+      if (!todoElDia && posActual !== undefined && posActual > ie) continue; // ya pasó por aquí
       retrasoMin = vivo.retrasoSeg ? Math.max(0, Math.round(vivo.retrasoSeg / 60)) : 0;
       enAnden = posActual === ie && vivo.estadoParada === 'STOPPED_AT';
     }
     const pasoPrevisto = tPaso + retrasoMin;
-    if (!enAnden && pasoPrevisto < ahora - MARGEN_SALIDA_MIN) continue;
+    const pasado = pasoPrevisto < ahora - MARGEN_SALIDA_MIN;
+    if (!todoElDia && !enAnden && pasado) continue;
 
     const patron = nucleo.patrones[iPatron];
     const termina = ie === patron.length - 1;
@@ -286,6 +290,7 @@ export function trenesEnEstacion(nucleo, estacionId, ahoraMs, enVivo = new Map()
       llegadaPrevista: estancia >= ESTANCIA_VISIBLE_MIN ? minutosAHora(pasoPrevisto - estancia) : null,
       faltanMin: enAnden ? 0 : Math.max(0, Math.round(pasoPrevisto - ahora)),
       enAnden,
+      pasado: !enAnden && pasado,
       retrasoMin,
       enVivo: Boolean(vivo),
       segunHorario: Boolean(vehiculo?.segunHorario) || nucleo.lineas[iLinea][0] === 'OUIGO',
