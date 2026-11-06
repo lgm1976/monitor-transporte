@@ -428,9 +428,12 @@ export class PanelEstacion {
     });
     if (trenes.length === 0) {
       const cuando = todo ? 'hoy' : 'en las próximas horas';
-      this.elResultados.innerHTML = `<p class="trayecto-vacio">No pasa ningún tren${this.estado.linea ? ` de la ${escaparHtml(this.estado.linea)}` : ''} ${cuando}.</p>`;
+      this.elResultados.innerHTML = `<p class="trayecto-vacio">No pasa ningún tren${this.estado.linea ? ` de la ${escaparHtml(this.estado.linea)}` : ''} ${cuando}.${this._textoManana(enVivo)}</p>`;
       return;
     }
+    // «Ver todo el día» sin trenes que queden hoy: se avisa del primero de mañana
+    const quedanHoy = trenes.some((t) => !t.pasado);
+    const cierre = todo && !quedanHoy ? `<li class="trayecto-vacio">Ya no quedan trenes hoy.${this._textoManana(enVivo)}</li>` : '';
     this.elResultados.innerHTML = trenes
       .map((t) => {
         const faltan = t.cancelado ? '—' : t.enAnden ? textoEnEstacion(this.nucleo) : t.pasado ? 'ya pasó' : textoFaltan(t.faltanMin);
@@ -458,6 +461,20 @@ export class PanelEstacion {
           </div>
         </li>`;
       })
-      .join('');
+      .join('') + cierre;
+  }
+
+  /**
+   * Frase con el primer tren del día siguiente en la estación (vacía si no hay).
+   * El horario solo cubre hasta mañana, así que no se da el de pasado mañana.
+   */
+  _textoManana(enVivo) {
+    const [t] = trenesEnEstacion(this.nucleo, this.estado.estacion, Date.now(), enVivo, {
+      linea: this.estado.linea,
+      dia: 1,
+      cuantos: 1,
+    });
+    if (!t) return '';
+    return ` <br>Primer tren de mañana: <strong>${t.hora}</strong> · ${escaparHtml(t.linea.nombre)} hacia ${escaparHtml(t.haciaNombre)}.`;
   }
 }

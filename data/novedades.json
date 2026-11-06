@@ -41,6 +41,15 @@
   },
   "versiones": [
     {
+      "version": "1.19",
+      "fecha": "2026-11-06",
+      "titulo": "Primer tren de mañana cuando hoy ya no quedan",
+      "cambios": [
+        "En el panel de estación, cuando ya no pasa ningún tren hoy, aparece el primero del día siguiente con su hora, su línea y su sentido.",
+        "Con «Ver todo el día», si quedan trenes hoy se ven todos, y si ya no queda ninguno se indica el primero de mañana."
+      ]
+    },
+    {
       "version": "1.18",
       "fecha": "2026-11-06",
       "titulo": "Todos los trenes del día en cada estación",
