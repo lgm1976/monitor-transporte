@@ -41,6 +41,15 @@
   },
   "versiones": [
     {
+      "version": "1.22",
+      "fecha": "2026-11-06",
+      "titulo": "Aviso antes de que caduque el horario de OUIGO",
+      "cambios": [
+        "Los trenes de OUIGO se muestran según su horario publicado. Cuando ese horario está a menos de dos semanas de caducar, el proceso de actualización de datos avisa para buscar una versión nueva a tiempo.",
+        "Para el público no cambia nada hasta que el horario caduque."
+      ]
+    },
+    {
       "version": "1.21",
       "fecha": "2026-11-06",
       "titulo": "Retrasos de viajes obsoletos descartados",

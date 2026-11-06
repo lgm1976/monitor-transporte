@@ -42,6 +42,7 @@ import urllib.request
 import zipfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 ZONA = ZoneInfo("Europe/Madrid")
@@ -168,6 +169,18 @@ def descargar(url: str) -> bytes:
         return r.read()
 
 
+def avisar_caducidad(clave: str, valido_hasta: Optional[str], hoy: date, dias: int = 14) -> bool:
+    """
+    Si el horario publicado caduca en menos de `dias` días, deja un aviso en
+    el registro de GitHub Actions (anotación ::warning::) para verlo a tiempo.
+    Devuelve True si avisó.
+    """
+    if not valido_hasta or valido_hasta >= (hoy + timedelta(days=dias)).isoformat():
+        return False
+    print(f"::warning::[{clave}] El horario caduca el {valido_hasta}: buscar una versión nueva en el Punto de Acceso Nacional")
+    return True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--zip", help="ZIP GTFS local de OUIGO (en vez de descargarlo)")
@@ -194,8 +207,7 @@ def main() -> int:
         print(f"[{clave}] {len(resultado['viajes'])} viajes ({hoy_n} hoy), "
               f"{len(resultado['estaciones'])} estaciones, válido hasta {resultado['validoHasta']} → {destino.name} "
               f"({destino.stat().st_size // 1024} KB)")
-        if resultado["validoHasta"] and resultado["validoHasta"] < (hoy + timedelta(days=14)).isoformat():
-            print(f"[{clave}] AVISO: el horario publicado caduca el {resultado['validoHasta']}", file=sys.stderr)
+        avisar_caducidad(clave, resultado["validoHasta"], hoy)
     return 1 if error else 0
 
 
