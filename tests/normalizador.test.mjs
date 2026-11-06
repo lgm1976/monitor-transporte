@@ -106,7 +106,7 @@ test('un viaje con la primera parada ya pasada hace mucho no aporta retraso', ()
     entity: [
       // Viaje fantasma: su hora de parada es de hace 2 horas y trae un retraso de 141 min
       { id: 'a', trip_update: { trip: { trip_id: 'FANTASMA' }, delay: 8460,
-        stop_time_update: [{ stop_id: '35606', arrival: { time: ahoraSeg - 7200, delay: 8460 } }] } },
+        stop_time_update: [{ stop_id: '35606', schedule_relationship: 'SKIPPED', arrival: { time: ahoraSeg - 7200, delay: 8460 } }] } },
       // Viaje normal: llega dentro de unos minutos con 2 min de retraso
       { id: 'b', trip_update: { trip: { trip_id: 'NORMAL' }, delay: 120,
         stop_time_update: [{ stop_id: '17000', arrival: { time: ahoraSeg + 240, delay: 120 } }] } },
@@ -115,4 +115,21 @@ test('un viaje con la primera parada ya pasada hace mucho no aporta retraso', ()
   const indice = indexarActualizacionesViaje([feed], { ahoraSeg });
   assert.equal(indice.get('FANTASMA').retrasoSeg, null);
   assert.equal(indice.get('NORMAL').retrasoSeg, 120);
+});
+
+test('un viaje antiguo sin paradas saltadas conserva su retraso', () => {
+  const ahoraSeg = 1_800_000_000;
+  const feed = {
+    entity: [
+      // Primera parada pasada hace 2 horas, sin paradas saltadas: el retraso sigue valiendo
+      { id: 'a', trip_update: { trip: { trip_id: 'ANTIGUO' }, delay: 300,
+        stop_time_update: [{ stop_id: '35606', arrival: { time: ahoraSeg - 7200, delay: 300 } }] } },
+      // Mismo caso pero con la parada marcada como saltada (protobuf: SKIPPED = 1): se descarta
+      { id: 'b', trip_update: { trip: { trip_id: 'SALTADO' }, delay: 300,
+        stop_time_update: [{ stop_id: '35606', schedule_relationship: 1, arrival: { time: ahoraSeg - 7200, delay: 300 } }] } },
+    ],
+  };
+  const indice = indexarActualizacionesViaje([feed], { ahoraSeg });
+  assert.equal(indice.get('ANTIGUO').retrasoSeg, 300);
+  assert.equal(indice.get('SALTADO').retrasoSeg, null);
 });

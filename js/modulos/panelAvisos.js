@@ -71,8 +71,10 @@ export class PanelAvisos {
    * @param {object} opciones
    * @param {({red, estacion})=>void} opciones.alAbrirEstacion abre la pestaña «Estación»
    */
-  constructor({ alAbrirEstacion }) {
+  constructor({ alAbrirEstacion, alCambiar }) {
     this.alAbrirEstacion = alAbrirEstacion;
+    /** Se llama al cambiar de núcleo o de línea, para reflejarlo en la URL */
+    this.alCambiar = alCambiar;
     this.datos = null;
     /** Error de la última lectura (si no hay datos que enseñar) */
     this.error = null;
@@ -91,6 +93,7 @@ export class PanelAvisos {
       this.estado = { ...this.estado, nucleo: this.elNucleo.value, linea: '' };
       guardar({ nucleo: this.estado.nucleo });
       this.pintar();
+      this.alCambiar?.();
     });
     this.elCategorias.addEventListener('click', (e) => {
       const b = e.target.closest('[data-categoria]');
@@ -103,6 +106,7 @@ export class PanelAvisos {
       if (!b) return;
       this.estado.linea = this.estado.linea === b.dataset.linea ? '' : b.dataset.linea;
       this.pintar();
+      this.alCambiar?.();
     });
     this.elLista.addEventListener('click', (e) => {
       const mas = e.target.closest('[data-leer-mas]');

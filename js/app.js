@@ -722,7 +722,7 @@ async function iniciar() {
     alVerAvisos: abrirAvisos,
   });
   app.estacion.alCambiarFavoritos = favoritosCambiados;
-  app.panelAvisos = new PanelAvisos({ alAbrirEstacion: abrirEstacion });
+  app.panelAvisos = new PanelAvisos({ alAbrirEstacion: abrirEstacion, alCambiar: sincronizarUrl });
   app.panelFavoritos = new PanelFavoritos({
     favoritos: app.favoritos,
     alAbrir: abrirFavorito,

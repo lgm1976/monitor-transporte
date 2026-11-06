@@ -16,6 +16,8 @@ import { clasificarEstado } from './estado.js';
 
 /** Valor numérico del enum ScheduleRelationship.CANCELED en GTFS-RT */
 const CANCELADO_ENUM = 3;
+/** Enumeración protobuf de StopTimeUpdate.schedule_relationship: SKIPPED = 1 */
+const SALTADA_ENUM = 1;
 
 /** Lee un campo aceptando snake_case o camelCase */
 export function campo(obj, nombreSnake) {
@@ -75,6 +77,14 @@ function estaCancelado(trip) {
   return rel === 'CANCELED' || rel === 'CANCELLED' || rel === CANCELADO_ENUM;
 }
 
+/** ¿Alguna parada del viaje viene marcada como saltada (SKIPPED)? */
+function tieneParadaSaltada(tripUpdate) {
+  return (campo(tripUpdate, 'stop_time_update') || []).some((parada) => {
+    const rel = campo(parada, 'schedule_relationship');
+    return rel === 'SKIPPED' || rel === SALTADA_ENUM;
+  });
+}
+
 /**
  * Extrae el retraso (seg) de una entidad TripUpdate.
  * Prioridad: trip_update.delay → primera parada con arrival/departure.delay
@@ -109,9 +119,11 @@ function proximaLlegadaDeTripUpdate(tripUpdate, desfaseSeg = 0) {
  * Construye un índice trip_id → {retrasoSeg, cancelado, proximaLlegada} a partir de uno
  * o varios feeds de TripUpdates (o de un feed mixto).
  *
- * Un viaje cuya primera parada ya pasó hace más de `obsoletoSeg` se considera
- * obsoleto (Renfe deja viajes fantasma con paradas saltadas y un retraso que
- * ya no corresponde): su retraso se descarta (null) en lugar de mostrarse.
+ * Un viaje cuya primera parada ya pasó hace más de `obsoletoSeg` y que además
+ * tiene paradas saltadas (SKIPPED) se considera obsoleto (Renfe deja viajes
+ * fantasma con paradas saltadas y un retraso que ya no corresponde): su retraso
+ * se descarta (null) en lugar de mostrarse. Un viaje antiguo sin paradas
+ * saltadas conserva su retraso, aunque la primera parada ya haya pasado.
  * @param {object[]} feeds
  * @param {number} [opciones.ahoraSeg] instante actual (Unix, s)
  * @param {number} [opciones.obsoletoSeg=900] antigüedad a partir de la que un viaje es obsoleto
@@ -126,7 +138,10 @@ export function indexarActualizacionesViaje(feeds, { desfaseSeg = 0, ahoraSeg = 
       const tripId = campo(trip, 'trip_id');
       if (!tripId) continue;
       const proximaLlegada = proximaLlegadaDeTripUpdate(tu, desfaseSeg);
-      const obsoleto = proximaLlegada !== null && proximaLlegada.tiempo < ahoraSeg - obsoletoSeg;
+      const obsoleto =
+        proximaLlegada !== null &&
+        proximaLlegada.tiempo < ahoraSeg - obsoletoSeg &&
+        tieneParadaSaltada(tu);
       indice.set(String(tripId), {
         retrasoSeg: obsoleto ? null : retrasoDeTripUpdate(tu),
         cancelado: estaCancelado(trip),

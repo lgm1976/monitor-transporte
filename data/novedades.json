@@ -41,6 +41,15 @@
   },
   "versiones": [
     {
+      "version": "1.23",
+      "fecha": "2026-11-07",
+      "titulo": "Retrasos que se mantienen y avisos con enlace de línea",
+      "cambios": [
+        "Un tren con retraso se muestra con su retraso aunque su primera parada ya haya pasado, salvo que Renfe marque paradas saltadas: así no se pierde el dato de los trenes con retraso pequeño.",
+        "En la pestaña «Avisos», el enlace de la barra de direcciones cambia al elegir una línea o un núcleo, para compartir esa vista."
+      ]
+    },
+    {
       "version": "1.22",
       "fecha": "2026-11-06",
       "titulo": "Aviso antes de que caduque el horario de OUIGO",
