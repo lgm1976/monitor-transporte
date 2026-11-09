@@ -30,6 +30,8 @@ import { RED_LARGA_DISTANCIA } from './estacion.js';
  * entrada para el zoom, no se pinta ninguna.
  */
 export const UMBRALES_LARGA_DISTANCIA = [[6, 100], [8, 60], [9, 30], [10, 12], [11, 0]];
+/** Radio (px) del área de toque de cada estación; el punto visible mide 4,5 px */
+const AREA_TOQUE_PX = 13;
 
 /** Mínimo de viajes para el zoom (Infinity: ninguna estación) */
 export function minimoViajes(zoom, umbrales = UMBRALES_LARGA_DISTANCIA) {
@@ -147,7 +149,7 @@ export class CapaEstaciones {
           color: acc ? '#d97706' : '#ffffff',
           fillColor: '#1e293b',
           fillOpacity: 1,
-          bubblingMouseEvents: false,
+          interactive: false,
         }
         : {
           renderer: this.renderer,
@@ -156,14 +158,25 @@ export class CapaEstaciones {
           color: acc ? '#d97706' : '#334155',
           fillColor: '#ffffff',
           fillOpacity: 1,
-          bubblingMouseEvents: false,
+          interactive: false,
         });
       const red = e.ld && e.nucleo ? `Larga distancia y Cercanías ${escaparHtml(e.nucleo)}` : e.ld ? 'Larga y media distancia' : `Cercanías ${escaparHtml(e.nucleo)}`;
-      m.bindTooltip(`${escaparHtml(e.nombre)}<small>${red}${acc ? ' · ⚠ aviso de accesibilidad' : ''} · toca para ver sus trenes</small>`, {
+      // Área de toque: transparente y algo mayor que el punto, para que el clic no
+      // dependa de acertar los pocos píxeles del punto (el punto no es interactivo)
+      const area = L.circleMarker([e.lat, e.lon], {
+        renderer: this.renderer,
+        radius: AREA_TOQUE_PX,
+        stroke: false,
+        fill: true,
+        fillOpacity: 0,
+        bubblingMouseEvents: false,
+      });
+      area.bindTooltip(`${escaparHtml(e.nombre)}<small>${red}${acc ? ' · ⚠ aviso de accesibilidad' : ''} · toca para ver sus trenes</small>`, {
         direction: 'top', offset: [0, -5], className: 'tooltip-estacion', opacity: 1,
       });
-      m.on('click', () => this.alElegir({ red: e.red, estacion: e.id }));
+      area.on('click', () => this.alElegir({ red: e.red, estacion: e.id }));
       m.addTo(this.capa);
+      area.addTo(this.capa);
     }
   }
 

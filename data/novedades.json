@@ -41,6 +41,15 @@
   },
   "versiones": [
     {
+      "version": "1.25",
+      "fecha": "2026-11-09",
+      "titulo": "Estaciones del mapa más fáciles de tocar",
+      "cambios": [
+        "Las estaciones del mapa se pueden tocar en un área más amplia que su punto, así que ya no hace falta acertar el punto exacto para ver sus trenes del día.",
+        "Al tocar una estación en el mapa, se abre su panel aunque no haya ningún tren seleccionado."
+      ]
+    },
+    {
       "version": "1.24",
       "fecha": "2026-11-09",
       "titulo": "Todos los trenes del día al tocar una estación o una parada",
