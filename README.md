@@ -805,8 +805,8 @@ Con la grabación de hora punta (02/11/2026, 18:17): 11 de los 441 trenes de Cer
 
 ## Próximos pasos sugeridos
 
-- Panel de estación de larga distancia: andén cuando Renfe lo publique; avisos si algún día hay feed de larga distancia.
-- Media Distancia en los trayectos con transbordo (hoy solo Cercanías).
 - Paradas del recorrido con los trenes que pasarán por ellas a lo largo del día (evolución de la fase 3).
-- Avisos de servicio: marcar en el mapa las estaciones con avisos de accesibilidad, resumen de avisos en los favoritos y en «Próximo tren», y enlace con la pestaña en la URL. Revisar si Renfe vuelve a actualizar su feed de avisos (congelado desde el 07/10/2026).
-- Filtro por operador cuando haya fuentes de otros operadores.
+- Primer tren de mañana para más de un día: hoy solo cubre el día siguiente; hace falta ampliar la ventana de `scripts/generar_diccionarios.py`.
+- Bloqueado por Renfe: andén y avisos de larga distancia (Renfe no los publica).
+- Bloqueado por Renfe: el feed de avisos de Cercanías lleva congelado desde el 07/10/2026; si se actualiza, los avisos vuelven a marcarse en los trenes y estaciones solos.
+- Bloqueado por otros operadores: filtro por operador, cuando haya fuentes de otros operadores.
