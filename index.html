@@ -21,6 +21,19 @@
   <script src="https://cdn.tailwindcss.com"></script>
 
   <link rel="stylesheet" href="css/estilos.css" />
+
+  <!-- Instalable en el móvil (PWA) -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <script>
+    // Registra el service worker: permite abrir la web sin cobertura con la última copia
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => { /* sin copia offline; la web sigue funcionando */ });
+      });
+    }
+  </script>
 </head>
 
 <body class="h-full overflow-hidden font-sans text-slate-800" data-panel="abierto" data-cargando="false">

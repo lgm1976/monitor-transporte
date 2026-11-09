@@ -41,6 +41,15 @@
   },
   "versiones": [
     {
+      "version": "1.26",
+      "fecha": "2026-11-09",
+      "titulo": "Instalable en el móvil y abierta sin cobertura",
+      "cambios": [
+        "Se puede añadir a la pantalla de inicio del móvil y se abre a pantalla completa, como una app.",
+        "Si no hay conexión, la web se abre con la última copia descargada: el horario de las estaciones y los trayectos siguen visibles, aunque sin posiciones en vivo."
+      ]
+    },
+    {
       "version": "1.25",
       "fecha": "2026-11-09",
       "titulo": "Estaciones del mapa más fáciles de tocar",
