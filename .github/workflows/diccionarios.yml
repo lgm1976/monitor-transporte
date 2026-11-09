@@ -40,6 +40,9 @@ jobs:
       # Si Overpass falla, se conserva la red de la semana anterior.
       - name: Red de vías de larga distancia (OpenStreetMap)
         if: github.event_name == 'schedule' || inputs.trazados_osm
+        # Límite propio: si Overpass no responde, el paso no puede bloquear la actualización de diccionarios
+        timeout-minutes: 20
+        continue-on-error: true
         run: |
           if [ "${{ github.event_name }}" = "schedule" ] && [ "$(date -u +%u)" != "1" ]; then
             echo "Hoy no toca (solo los lunes)."; exit 0
