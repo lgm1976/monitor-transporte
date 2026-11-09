@@ -41,6 +41,15 @@
   },
   "versiones": [
     {
+      "version": "1.24",
+      "fecha": "2026-11-09",
+      "titulo": "Todos los trenes del día al tocar una estación o una parada",
+      "cambios": [
+        "Al tocar una estación en el mapa, se abre su panel directamente con todos los trenes del día, pasados incluidos.",
+        "Al tocar una parada del recorrido de un tren seguido, también se abre el día completo de esa estación."
+      ]
+    },
+    {
       "version": "1.23",
       "fecha": "2026-11-07",
       "titulo": "Retrasos que se mantienen y avisos con enlace de línea",

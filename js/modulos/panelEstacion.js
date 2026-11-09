@@ -160,11 +160,12 @@ export class PanelEstacion {
   }
 
   /**
-   * Abre una estación concreta (desde el mapa o un favorito). Si la
+   * Abre una estación concreta (desde el mapa, una parada del recorrido o un
+   * favorito). Con `todoElDia`, abre directamente «Ver todo el día». Si la
    * pestaña no está activa, la deja preparada para cuando se active.
    */
-  async abrir({ red, estacion }) {
-    this.estado = { red, estacion, linea: '' };
+  async abrir({ red, estacion, todoElDia = false }) {
+    this.estado = { red, estacion, linea: '', todoElDia };
     if (this.activo) await this.activar();
   }
 

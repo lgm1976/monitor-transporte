@@ -369,9 +369,12 @@ function cambiarVista(vista) {
   sincronizarUrl();
 }
 
-/** Abre el panel de una estación (desde el mapa, una parada del recorrido o un favorito) */
-function abrirEstacion({ red, estacion }) {
-  app.estacion.abrir({ red, estacion });
+/**
+ * Abre el panel de una estación (desde el mapa, una parada del recorrido o un favorito).
+ * `todoElDia`: abrirla ya en «Ver todo el día» (mapa y paradas del recorrido).
+ */
+function abrirEstacion({ red, estacion, todoElDia = false }) {
+  app.estacion.abrir({ red, estacion, todoElDia });
   if (app.vista === 'estacion') app.estacion.activar();
   else cambiarVista('estacion');
   plegarPanel(false);
@@ -633,7 +636,8 @@ function conectarControles() {
   // Al arrastrar el mapa se deja de centrar en el tren (se ofrece «Centrar»)
   app.mapa.alSoltarSeguimiento = soltarCentrado;
   // Tocar una parada de Cercanías del recorrido abre el panel de su estación
-  app.mapa.alElegirEstacion = abrirEstacion;
+  // Parada del recorrido del tren seguido: abre el día completo de esa estación
+  app.mapa.alElegirEstacion = (e) => abrirEstacion({ ...e, todoElDia: true });
 
   // Pestañas del panel
   document.querySelector('.pestanas').addEventListener('click', (e) => {
@@ -706,7 +710,8 @@ async function iniciar() {
   });
   app.trayecto.alCambiarFavoritos = favoritosCambiados;
   app.capaEstaciones = new CapaEstaciones(app.mapa.mapa, {
-    alElegir: abrirEstacion,
+    // Estación tocada en el mapa: su día completo
+    alElegir: (e) => abrirEstacion({ ...e, todoElDia: true }),
     color: app.estilos.theme?.accent || '#2563eb',
   });
   app.estacion = new PanelEstacion({
