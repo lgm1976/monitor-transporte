@@ -41,6 +41,15 @@
   },
   "versiones": [
     {
+      "version": "1.29",
+      "fecha": "2026-11-10",
+      "titulo": "Estaciones tocables aunque haya un tren encima",
+      "cambios": [
+        "Tocar una estación del mapa abre su panel aunque un tren esté parado sobre ella. Antes, el tren se llevaba el toque.",
+        "Los trenes siguen pudiendo tocarse fuera de las estaciones."
+      ]
+    },
+    {
       "version": "1.28",
       "fecha": "2026-11-10",
       "titulo": "Avisos de los trayectos favoritos",

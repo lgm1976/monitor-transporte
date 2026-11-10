@@ -18,7 +18,7 @@
  * Si añades un módulo a js/, añádelo también a NUCLEO: tests/pwa.test.mjs lo comprueba.
  */
 
-const VERSION = 'monitor-transporte-v3';
+const VERSION = 'monitor-transporte-v4';
 
 /**
  * Lo que se guarda al instalar, para que la app arranque sin conexión: la página,

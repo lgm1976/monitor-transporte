@@ -5,6 +5,11 @@
  * estilo_mapa.json en app.js), marcadores, popups y leyenda.
  */
 
+/* Áreas de toque de las estaciones (capaEstaciones.js): el panel deja pasar los
+   clics, y solo las áreas en sí los reciben, encima de los trenes */
+.toque-estaciones { pointer-events: none; }
+.toque-estaciones path.leaflet-interactive { pointer-events: visiblePainted; }
+
 :root {
   /* Valores por defecto; app.js los sobrescribe con estilo_mapa.json */
   --color-primario: #0f172a;

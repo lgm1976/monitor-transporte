@@ -64,6 +64,13 @@ export class CapaEstaciones {
     // Panel propio, por debajo de las vías del recorrido y de los trenes
     mapa.createPane('estaciones').style.zIndex = 390;
     this.renderer = L.canvas({ pane: 'estaciones', padding: 0.3 });
+    // Áreas de toque: por encima de los trenes (un tren parado en la estación no debe
+    // impedir tocarla). Es SVG, no canvas: un lienzo a pantalla completa taparía a los
+    // trenes. El panel no recibe clics; solo las áreas (ver estilos.css, .toque-estaciones)
+    const panelToque = mapa.createPane('toqueEstaciones');
+    panelToque.classList.add('toque-estaciones');
+    panelToque.style.zIndex = 620;
+    this.rendererToque = L.svg({ pane: 'toqueEstaciones', padding: 0.3 });
     this.capa = L.layerGroup().addTo(mapa);
     this.marca = null;
     this.pintadas = '';
@@ -164,7 +171,7 @@ export class CapaEstaciones {
       // Área de toque: transparente y algo mayor que el punto, para que el clic no
       // dependa de acertar los pocos píxeles del punto (el punto no es interactivo)
       const area = L.circleMarker([e.lat, e.lon], {
-        renderer: this.renderer,
+        renderer: this.rendererToque,
         radius: AREA_TOQUE_PX,
         stroke: false,
         fill: true,
