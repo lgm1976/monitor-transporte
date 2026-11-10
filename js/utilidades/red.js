@@ -9,11 +9,13 @@ import { CONFIG } from '../config.js';
 
 /** Error con un mensaje pensado para mostrarse al usuario */
 export class ErrorRed extends Error {
-  constructor(mensaje, { causa, posibleCors = false } = {}) {
+  constructor(mensaje, { causa, posibleCors = false, sinConexion = false } = {}) {
     super(mensaje);
     this.name = 'ErrorRed';
     this.causa = causa;
     this.posibleCors = posibleCors;
+    /** true cuando el navegador indica que no hay conexión (no es un problema de CORS) */
+    this.sinConexion = sinConexion;
   }
 }
 
@@ -53,6 +55,13 @@ export async function pedir(url, { usarProxy = false, cabeceras = {} } = {}) {
     if (error instanceof ErrorRed) throw error;
     if (error.name === 'AbortError') {
       throw new ErrorRed(`Tiempo de espera agotado (${CONFIG.timeoutPeticionMs / 1000} s)`, { causa: error });
+    }
+    // Sin red el navegador también lanza TypeError: se distingue para no culpar a CORS
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      throw new ErrorRed(
+        'Sin conexión a internet. Se muestra la última copia guardada de la web y de los horarios.',
+        { causa: error, sinConexion: true }
+      );
     }
     // fetch lanza TypeError sin más detalle cuando el navegador bloquea por CORS
     const sinProxy = !usarProxy || !CONFIG.proxyCors;

@@ -41,6 +41,15 @@
   },
   "versiones": [
     {
+      "version": "1.27",
+      "fecha": "2026-11-10",
+      "titulo": "Abierta sin cobertura desde la primera visita",
+      "cambios": [
+        "Tras abrir la web una sola vez con conexión, ya se puede abrir sin cobertura: el mapa, los horarios de Madrid y de Larga Distancia y los diccionarios se guardan al instalar.",
+        "Sin conexión, la web avisa de que no hay red en lugar de sugerir un problema de CORS."
+      ]
+    },
+    {
       "version": "1.26",
       "fecha": "2026-11-09",
       "titulo": "Instalable en el móvil y abierta sin cobertura",
