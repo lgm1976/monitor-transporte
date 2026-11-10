@@ -502,6 +502,39 @@ function avisarFavoritos() {
   }
 }
 
+/** Clave de localStorage: la tarjeta de bienvenida ya se cerró o se usó */
+const CLAVE_BIENVENIDA = 'monitor-transporte:bienvenida-cerrada';
+
+/**
+ * Tarjeta «¿A dónde vas?» para quien llega por primera vez: invita a buscar
+ * un trayecto. No aparece si ya la cerró, si tiene favoritos o si llega con un
+ * tren, estación o trayecto concreto en la URL.
+ */
+function iniciarBienvenida(estadoUrl) {
+  const el = $('bienvenida');
+  let cerrada = false;
+  try {
+    cerrada = almacenLocal()?.getItem(CLAVE_BIENVENIDA) === '1';
+  } catch {
+    cerrada = false;
+  }
+  const conDestino = Boolean(estadoUrl.tren || estadoUrl.estacion || estadoUrl.desde || estadoUrl.hasta);
+  el.hidden = cerrada || conDestino || app.favoritos.lista.length > 0;
+  const cerrar = () => {
+    el.hidden = true;
+    try {
+      almacenLocal()?.setItem(CLAVE_BIENVENIDA, '1');
+    } catch {
+      /* sin almacenamiento, volverá a salir en la siguiente visita */
+    }
+  };
+  $('bienvenida-cerrar').addEventListener('click', cerrar);
+  $('bienvenida-buscar').addEventListener('click', () => {
+    cerrar();
+    cambiarVista('trayecto');
+  });
+}
+
 /** Lee la fuente actual una vez */
 async function refrescar() {
   if (app.cargando) return;
@@ -738,6 +771,7 @@ async function iniciar() {
     favoritos: app.favoritos,
   });
   app.trayecto.alCambiarFavoritos = favoritosCambiados;
+  iniciarBienvenida(estadoUrl);
   app.capaEstaciones = new CapaEstaciones(app.mapa.mapa, {
     // Estación tocada en el mapa: su día completo
     alElegir: (e) => abrirEstacion({ ...e, todoElDia: true }),

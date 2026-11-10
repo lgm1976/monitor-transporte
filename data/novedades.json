@@ -41,6 +41,16 @@
   },
   "versiones": [
     {
+      "version": "1.30",
+      "fecha": "2026-11-10",
+      "titulo": "Primera visita más sencilla",
+      "cambios": [
+        "Quien llega por primera vez ve una tarjeta «¿A dónde vas?» que lleva a buscar un trayecto. Se cierra y no vuelve a salir.",
+        "La leyenda de colores del mapa se pliega por defecto: pulsa «Colores» para desplegarla.",
+        "En el móvil desaparece el botón «Actualizar»: los datos ya se actualizan solos."
+      ]
+    },
+    {
       "version": "1.29",
       "fecha": "2026-11-10",
       "titulo": "Estaciones tocables aunque haya un tren encima",

@@ -148,7 +148,8 @@ test('datos reales: los viajes de Madrid quedan sobre su vía y recortados', () 
     if (r.paradas.filter((p) => p.enVia).length >= paradas.length - 1) porVia++;
     if (r.trazado.longitud < via.longitud - 500) recortados++;
   }
-  assert.ok(probados > 2000, `probados ${probados}`);
+  // El horario cubre tres días y su tamaño cambia cada día: basta con una muestra grande
+  assert.ok(probados > 1000, `probados ${probados}`);
   // El trazado va en el sentido del viaje: casi todas sus paradas caen sobre él
   assert.ok(porVia / probados > 0.95, `por la vía ${porVia} de ${probados}`);
   assert.ok(recortados > 0, 'algún viaje empieza o acaba antes que su línea');

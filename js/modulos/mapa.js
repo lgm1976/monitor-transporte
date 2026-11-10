@@ -368,13 +368,22 @@ export class MapaTransporte {
   _crearLeyenda() {
     const leyenda = L.control({ position: 'bottomright' });
     leyenda.onAdd = () => {
-      const div = L.DomUtil.create('div', 'leyenda-mapa');
+      // Plegada por defecto: en el móvil deja ver el mapa; se despliega con «Colores»
+      const div = L.DomUtil.create('div', 'leyenda-mapa leyenda-plegada');
       div.innerHTML =
+        '<button type="button" class="leyenda-boton" aria-expanded="false">Colores</button>' +
         ORDEN_ESTADOS.map((e) => `<span><i style="background:${this.colorDe(e)}"></i>${ETIQUETAS_ESTADO[e]}</span>`).join('') +
         ((CONFIG.fuentesHorario || []).some((f) => f.activa)
           ? '<span><i class="leyenda-horario"></i>Según horario (sin datos en vivo)</span>'
           : '') +
         (CONFIG.agrupacion?.activa ? '<span><i class="leyenda-grupo"></i>Varios trenes (toca para acercar)</span>' : '');
+      // Que los toques en la leyenda no lleguen al mapa
+      L.DomEvent.disableClickPropagation(div);
+      const boton = div.querySelector('.leyenda-boton');
+      boton.addEventListener('click', () => {
+        const abierta = div.classList.toggle('leyenda-plegada') === false;
+        boton.setAttribute('aria-expanded', String(abierta));
+      });
       return div;
     };
     leyenda.addTo(this.mapa);

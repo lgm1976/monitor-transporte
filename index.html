@@ -64,7 +64,8 @@
           <span class="hidden sm:inline">Información</span>
           <span id="punto-novedades" class="punto-novedades" hidden></span>
         </button>
-        <button id="btn-refrescar" type="button" class="boton-cabecera">Actualizar</button>
+        <!-- En el móvil sobra: los datos ya se actualizan solos cada pocos segundos -->
+        <button id="btn-refrescar" type="button" class="boton-cabecera hidden sm:inline-block">Actualizar</button>
         <button id="btn-pausa" type="button" aria-pressed="false" class="boton-cabecera">Pausar</button>
         <button id="btn-modo" type="button" class="boton-cabecera boton-acento">—</button>
       </div>
@@ -206,6 +207,13 @@
       <!-- Mapa -->
       <section class="relative min-w-0 flex-1">
         <div id="mapa" class="absolute inset-0" role="application" aria-label="Mapa de vehículos en tiempo real"></div>
+        <!-- Primera visita: invita a buscar un trayecto. Se oculta al cerrarla o al tener favoritos -->
+        <div id="bienvenida" hidden class="absolute bottom-8 left-3 z-[500] w-56 rounded-xl bg-white p-3 text-sm text-slate-700 shadow-lg ring-1 ring-slate-200">
+          <button id="bienvenida-cerrar" type="button" aria-label="Cerrar" class="absolute right-1.5 top-1.5 rounded px-1.5 text-lg leading-none text-slate-400 hover:text-slate-600">×</button>
+          <p class="pr-4 font-semibold text-slate-900">¿A dónde vas?</p>
+          <p class="mt-1 text-xs text-slate-500">Elige dos estaciones y mira cuándo sale tu próximo tren.</p>
+          <button id="bienvenida-buscar" type="button" class="mt-2 w-full rounded-lg bg-blue-600 px-3 py-1.5 font-semibold text-white hover:bg-blue-700">Buscar un trayecto</button>
+        </div>
         <!-- Tarjeta del tren seguido (se rellena desde app.js) -->
         <div id="tarjeta-seguimiento" hidden role="region" aria-label="Tren que estás siguiendo" aria-live="polite"
           class="tarjeta-seguimiento absolute inset-x-3 bottom-8 z-[650] mx-auto max-w-md"></div>
