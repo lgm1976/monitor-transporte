@@ -548,6 +548,7 @@ async function refrescar() {
     const retenidos = app.mapa.registrarLectura(leidos);
     app.vehiculos = retenidos.length ? leidos.concat(retenidos) : leidos;
     app.fallosSeguidos = 0;
+    if (app.modo === 'real') app.lecturaRealOk = true;
     renderizar();
     avisarFavoritos();
     marcarActualizacion();
@@ -558,6 +559,11 @@ async function refrescar() {
     mostrarAviso(erroresParciales, 'aviso');
   } catch (error) {
     app.fallosSeguidos += 1;
+    // Primera visita sin ?modo= (modo real por defecto): si los datos en vivo no
+    // responden, se pasa a simulados. Se hace al terminar la lectura (ver programar)
+    if (app.modoAutomatico && app.modo === 'real' && !app.lecturaRealOk && app.fallosSeguidos >= 2) {
+      app.volverASimulados = true;
+    }
     console.error('[refresco]', error);
     // Se conservan los últimos datos buenos en pantalla
     mostrarAviso(`No se pudieron actualizar los datos: ${error.message}`, 'error');
@@ -574,6 +580,13 @@ function programar() {
   const factor = Math.min(2 ** app.fallosSeguidos, 6); // máx. ×6
   app.temporizador = setTimeout(async () => {
     await refrescar();
+    if (app.volverASimulados) {
+      app.volverASimulados = false;
+      // establecerModo lanza sus propias lecturas y su programación
+      await establecerModo('mock');
+      mostrarToast('Los datos en vivo no responden ahora. Se muestran datos simulados; pulsa «Ver datos reales» para volver a intentarlo.', 12000);
+      return;
+    }
     programar();
   }, CONFIG.intervaloRefrescoSeg * 1000 * factor);
 }
@@ -830,6 +843,8 @@ async function iniciar() {
   if (CONFIG.ubicacion?.activa && !tieneVistaPropia(estadoUrl)) {
     app.ubicacionInicial = obtenerPosicion({ timeoutMs: CONFIG.ubicacion.timeoutMs });
   }
+  // Sin ?modo= en la URL se empieza en el modo por defecto y se puede volver a simulados si falla
+  app.modoAutomatico = !estadoUrl.modo;
   await establecerModo(estadoUrl.modo || CONFIG.modoPorDefecto, { esArranque: true });
 }
 

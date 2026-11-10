@@ -11,7 +11,7 @@
 
 export const CONFIG = {
   /** Modo por defecto si la URL no indica ?modo= */
-  modoPorDefecto: 'mock',
+  modoPorDefecto: 'real',
 
   /**
    * Segundos entre lecturas de los feeds. Renfe renueva las posiciones

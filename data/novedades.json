@@ -41,6 +41,15 @@
   },
   "versiones": [
     {
+      "version": "1.31",
+      "fecha": "2026-11-10",
+      "titulo": "Datos en vivo por defecto",
+      "cambios": [
+        "Quien abre la web por primera vez ve directamente los trenes en vivo, no los datos simulados.",
+        "Si los datos en vivo no responden varias veces seguidas, la web pasa a datos simulados y lo indica con un aviso; «Ver datos reales» vuelve a intentarlo."
+      ]
+    },
+    {
       "version": "1.30",
       "fecha": "2026-11-10",
       "titulo": "Primera visita más sencilla",
