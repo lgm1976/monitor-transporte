@@ -55,9 +55,23 @@ export class PanelFavoritos {
   activar() {
     this.activo = true;
     this.pintar();
-    // Descarga los núcleos de los favoritos (y su red de transbordos) y repinta cuando lleguen
+    // Repinta cuando lleguen las redes de los favoritos
+    this.precargarRedes().then(() => this.activo && this.pintar());
+  }
+
+  /**
+   * Descarga los núcleos de los favoritos y su red de transbordos. Lo usan la
+   * pestaña (al abrirla) y los avisos de trayectos (desde que arranca la web).
+   */
+  precargarRedes() {
     const slugs = [...new Set(this.favoritos.lista.map((f) => f.red))];
-    Promise.all(slugs.map((s) => this._cargarRed(s))).then(() => this.activo && this.pintar());
+    return Promise.all(slugs.map((s) => this._cargarRed(s)));
+  }
+
+  /** Núcleo con el que se calcula el resumen de un favorito (los trayectos, con sus transbordos) */
+  nucleoDe(f) {
+    if (f.tipo === 'trayecto' && this.redes.has(f.red)) return this.redes.get(f.red);
+    return this.horarios.obtenerPreparado(f.red) ?? null;
   }
 
   /**
@@ -126,9 +140,7 @@ export class PanelFavoritos {
       .map((f) => {
         const clave = claveFavorito(f);
         // Las estaciones usan el horario del núcleo; los trayectos, la red con transbordos
-        const nucleo = f.tipo === 'trayecto' && this.redes.has(f.red)
-          ? this.redes.get(f.red)
-          : this.horarios.obtenerPreparado(f.red) ?? null;
+        const nucleo = this.nucleoDe(f);
         const resumen = resumenFavorito(f, nucleo, ahora, enVivo);
         const textoAvisos = this._textoAvisos(f, nucleo);
         const icono = f.tipo === 'trayecto'

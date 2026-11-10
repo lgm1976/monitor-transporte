@@ -29,7 +29,8 @@ import { PanelFavoritos } from './modulos/panelFavoritos.js';
 import { PanelAvisos } from './modulos/panelAvisos.js';
 import { PanelInfo } from './modulos/panelInfo.js';
 import { indexarPorLinea, avisosDeTren, estacionesConAccesibilidad } from './modulos/avisos.js';
-import { Favoritos, RED_LARGA_DISTANCIA } from './modulos/estacion.js';
+import { Favoritos, RED_LARGA_DISTANCIA, claveFavorito, vehiculosPorViaje } from './modulos/estacion.js';
+import { alertasDeTrayecto, VigilanteFavoritos } from './modulos/alertasFavoritos.js';
 import { CapaEstaciones } from './modulos/capaEstaciones.js';
 import { slugNucleo } from './modulos/recorrido.js';
 import { FuenteMock } from './fuentes/fuenteMock.js';
@@ -474,6 +475,33 @@ function ponerHorasParada(vehiculos) {
   }
 }
 
+/**
+ * Avisa de los próximos trenes de los trayectos favoritos que se cancelan o
+ * se retrasan. Solo con la web abierta (ver alertasFavoritos.js). Un favorito
+ * cuya red aún no ha cargado no cuenta: se revisa cuando cargue.
+ */
+function avisarFavoritos() {
+  const enVivo = vehiculosPorViaje(app.vehiculos);
+  const umbrales = app.estilos.delay_thresholds_minutes;
+  const ahora = Date.now();
+  const actuales = [];
+  const listos = [];
+  for (const f of app.favoritos.lista) {
+    if (f.tipo !== 'trayecto') continue;
+    const nucleo = app.panelFavoritos.nucleoDe(f);
+    if (!nucleo) continue;
+    const clave = claveFavorito(f);
+    listos.push(clave);
+    for (const a of alertasDeTrayecto(nucleo, f, ahora, enVivo, umbrales)) {
+      actuales.push({ ...a, clave, nombre: f.nombre });
+    }
+  }
+  const nuevas = app.vigilante.revisar(actuales, listos);
+  if (nuevas.length) {
+    mostrarToast(nuevas.map((a) => `⚠ <strong>${escaparHtml(a.nombre || 'Trayecto')}</strong>: ${escaparHtml(a.texto)}`).join('<br>'), 10000);
+  }
+}
+
 /** Lee la fuente actual una vez */
 async function refrescar() {
   if (app.cargando) return;
@@ -488,6 +516,7 @@ async function refrescar() {
     app.vehiculos = retenidos.length ? leidos.concat(retenidos) : leidos;
     app.fallosSeguidos = 0;
     renderizar();
+    avisarFavoritos();
     marcarActualizacion();
 
     const erroresParciales = app.fuente.errores?.size
@@ -733,6 +762,9 @@ async function iniciar() {
     alAbrir: abrirFavorito,
     alCambiar: favoritosCambiados,
   });
+  // Los avisos de trayectos necesitan las redes desde la primera lectura, no al abrir la pestaña
+  app.panelFavoritos.precargarRedes().catch(() => { /* sin red de un favorito: se reintenta al abrir la pestaña */ });
+  app.vigilante = new VigilanteFavoritos();
 
   const u = app.estilos.delay_thresholds_minutes;
   $('texto-umbrales').textContent = `Leve ≥ ${u.slight} min · Grave ≥ ${u.severe} min`;

@@ -18,7 +18,7 @@
  * Si añades un módulo a js/, añádelo también a NUCLEO: tests/pwa.test.mjs lo comprueba.
  */
 
-const VERSION = 'monitor-transporte-v2';
+const VERSION = 'monitor-transporte-v3';
 
 /**
  * Lo que se guarda al instalar, para que la app arranque sin conexión: la página,
@@ -51,6 +51,7 @@ const NUCLEO = [
   'js/fuentes/fuenteHorario.js',
   'js/fuentes/fuenteMock.js',
   'js/modulos/agrupacion.js',
+  'js/modulos/alertasFavoritos.js',
   'js/modulos/avisos.js',
   'js/modulos/capaEstaciones.js',
   'js/modulos/diccionario.js',

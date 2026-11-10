@@ -41,6 +41,15 @@
   },
   "versiones": [
     {
+      "version": "1.28",
+      "fecha": "2026-11-10",
+      "titulo": "Avisos de los trayectos favoritos",
+      "cambios": [
+        "Si uno de los próximos trenes de un trayecto favorito se cancela o acumula retraso (desde 5 minutos), aparece un aviso mientras la web está abierta. Cada tren avisa una vez, y de nuevo si el retraso pasa a grave.",
+        "Lo que ya estaba al guardar el favorito no avisa; solo se avisa de los trenes que salen en la próxima hora."
+      ]
+    },
+    {
       "version": "1.27",
       "fecha": "2026-11-10",
       "titulo": "Abierta sin cobertura desde la primera visita",
